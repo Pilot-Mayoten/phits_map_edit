@@ -32,8 +32,6 @@ CELL_TYPES = {
     "中継地点": [4, "orange"]  # A*アルゴリズム用に追加
 }
 
-print("🗺️ PHITS環境定義 & 線量可視化 & 経路探索 GUI 起動")
-
 class MapEditorApp(tk.Tk):
     def __init__(self):
         super().__init__()
