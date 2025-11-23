@@ -5,6 +5,7 @@ A*アルゴリズムを含む、経路計算関連のロジックを格納する
 """
 
 import heapq
+import math
 from app_config import MAP_ROWS, MAP_COLS
 
 def find_optimal_route(start_pos, goal_pos, middle_pos, map_data, dose_map, weight):
@@ -101,3 +102,51 @@ def run_astar(start, goal, map_data, dose_map, weight):
                 heapq.heappush(queue, (priority, new_cost, next_pos, path + [next_pos]))
                 
     return None # ゴールに到達できなかった場合
+
+# ==========================================================================
+#  詳細評価用の経路点計算 (1021.pyより移植)
+# ==========================================================================
+
+def _distance(p1, p2):
+    """3次元座標p1とp2のユークリッド距離を計算する"""
+    return math.sqrt(sum((b - a) ** 2 for a, b in zip(p1, p2)))
+
+def _interpolate_point(p1, p2, ratio):
+    """p1とp2をratioで内分する点を計算する"""
+    return tuple(p1[i] + ratio * (p2[i] - p1[i]) for i in range(3))
+
+def compute_detailed_path_points(start_phys, mid_phys, end_phys, step_cm):
+    """
+    スタート、中継点、ゴールの物理座標から、指定されたステップ幅で
+    評価点群の物理座標リストを生成する。
+    """
+    path_points = [start_phys]
+    
+    # --- スタート -> 中継点 ---
+    if mid_phys:
+        seg1_len = _distance(start_phys, mid_phys)
+        if step_cm > 0 and seg1_len > 0:
+            n_steps1 = int(seg1_len // step_cm)
+            for step in range(1, n_steps1 + 1):
+                ratio = (step * step_cm) / seg1_len
+                path_points.append(_interpolate_point(start_phys, mid_phys, ratio))
+        path_points.append(mid_phys)
+        
+        # --- 中継点 -> ゴール ---
+        start_of_seg2 = mid_phys
+    else:
+        # --- スタート -> ゴール (中継点なし) ---
+        start_of_seg2 = start_phys
+
+    seg2_len = _distance(start_of_seg2, end_phys)
+    if step_cm > 0 and seg2_len > 0:
+        n_steps2 = int(seg2_len // step_cm)
+        for step in range(1, n_steps2 + 1):
+            ratio = (step * step_cm) / seg2_len
+            path_points.append(_interpolate_point(start_of_seg2, end_phys, ratio))
+    
+    # 最後の点がゴールと完全一致でなければ、ゴールを追加
+    if path_points[-1] != end_phys:
+        path_points.append(end_phys)
+        
+    return path_points

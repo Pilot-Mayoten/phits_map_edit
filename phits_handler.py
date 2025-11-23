@@ -7,6 +7,8 @@ PHITSの入力ファイル生成、実行、出力解析など、PHITS関連の�
 import textwrap
 import re
 import os
+import shutil
+import subprocess
 from tkinter import filedialog, messagebox
 
 from app_config import (MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y, 
@@ -219,3 +221,70 @@ def load_and_parse_dose_map():
     except Exception as e:
         messagebox.showerror("読み込みエラー", f"{e}")
         return None
+
+# ==========================================================================
+#  詳細評価用のファイル生成と実行 (1021.pyより移植・統合)
+# ==========================================================================
+
+def _get_template_content():
+    """アプリケーションと同じディレクトリからtemplate.inpを読み込む"""
+    try:
+        # スクリプト自身の絶対パスからディレクトリを取得
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        template_path = os.path.join(script_dir, "template.inp")
+        
+        with open(template_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        messagebox.showerror("テンプレートエラー", 
+                             f"template.inpが見つかりません。\\n"
+                             f"実行ファイルと同じディレクトリに配置してください。\\n"
+                             f"検索パス: {template_path}")
+        return None
+    except Exception as e:
+        messagebox.showerror("テンプレート読込エラー", f"エラーが発生しました: {e}")
+        return None
+
+def _generate_input_text_for_detail(template, det_pos, route_info):
+    """詳細評価用の入力ファイル文字列を生成する"""
+    return template.format(
+        det_x=det_pos[0], det_y=det_pos[1], det_z=det_pos[2],
+        src_x=route_info["source"][0], 
+        src_y=route_info["source"][1], 
+        src_z=route_info["source"][2],
+        nuclide_name=route_info["nuclide"],
+        activity_value=route_info["activity"],
+        maxcas_value="1000",  # 将来的にはUIから取得する
+        maxbch_value="5"
+    )
+
+def generate_detailed_simulation_files(routes, output_dir_base):
+    """
+    登録された全経路に対して、詳細評価用のPHITS入力ファイル群を生成する。
+    """
+    template_content = _get_template_content()
+    if not template_content:
+        return False, 0 # テンプレートがなければ失敗
+
+    total_files = 0
+    for idx, route in enumerate(routes):
+        route_dir = os.path.join(output_dir_base, f"route_{idx+1:03}")
+        os.makedirs(route_dir, exist_ok=True)
+
+        # 評価点リストの計算はroute_calculatorに任せる想定
+        # ここではダミーとして空リストを仮定
+        path_points = route.get("detailed_path", []) 
+        if not path_points:
+            continue
+
+        for i, point_phys_coords in enumerate(path_points):
+            input_text = _generate_input_text_for_detail(template_content, 
+                                                         point_phys_coords, 
+                                                         route)
+            
+            input_filename = os.path.join(route_dir, f"input_{i:03}.inp")
+            with open(input_filename, "w", encoding="utf-8") as f:
+                f.write(input_text)
+            total_files += 1
+            
+    return True, total_files

@@ -1,0 +1,50 @@
+[ Title ]
+Detailed Dose Calculation at a specific point on the route
+
+[ P a r a m e t e r s ]
+   maxcas   = {maxcas_value}
+   maxbch   = {maxbch_value}
+   
+[ M a t e r i a l ]
+  mat[1]   H 2 O 1       $ Water for Phantom
+  mat[2]   N 8 O 2       $ Air
+
+[ S u r f a c e ]
+  100  cz   5.0          $ Detector (Phantom) Cylinder Radius
+  101  pz  -10.0         $ Detector (Phantom) Bottom Z
+  102  pz   10.0         $ Detector (Phantom) Top Z
+  
+  999  so   20000.0      $ Outer void sphere
+
+[ C e l l ]
+  101  1  -1.0   -100  (101:102)   $ Detector (Water Phantom) at ({det_x}, {det_y}, {det_z})
+                                   trcl = ({det_x} {det_y} {det_z})
+
+  998  2  -1.2E-3 #101             $ Air region outside phantom
+  999 -2          -999             $ Void outside air sphere
+
+[ S o u r c e ]
+   s-type = 1
+     proj = photon
+       x0 = {src_x}
+       y0 = {src_y}
+       z0 = {src_z}
+       z1 = {src_z}
+      dir = all
+   e-type = 28
+       ni = 1
+    {nuclide_name}  {activity_value}
+    dtime = -10.0
+     norm = 0
+
+[ T - D e p o s i t ]
+    title = Dose in Detector
+     mesh = reg
+   reg[1] = 101       $ Target cell is the detector
+     unit = 0         $ Gy/source
+   output = dose
+     file = deposit.out
+     part = all
+   epsout = 1
+
+[ E n d ]

@@ -6,7 +6,7 @@
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 class SimulationControlsView(tk.Frame):
     def __init__(self, master, callbacks):
@@ -24,85 +24,167 @@ class SimulationControlsView(tk.Frame):
         self.create_widgets()
 
     def create_widgets(self):
-        # --- 全体を上下に分割するPanedWindow ---
-        main_paned_window = ttk.PanedWindow(self, orient=tk.VERTICAL)
-        main_paned_window.pack(fill=tk.BOTH, expand=True)
+        # --- 全体を上下左右に分割するPanedWindow ---
+        main_paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
+        main_paned.pack(fill=tk.BOTH, expand=True)
 
-        # --- 上部：コントロールパネル ---
-        controls_frame = ttk.Frame(main_paned_window)
-        main_paned_window.add(controls_frame, weight=1)
+        # --- 上部：経路定義とリスト ---
+        top_frame = ttk.Frame(main_paned)
+        main_paned.add(top_frame, weight=2)
 
+        top_paned = ttk.PanedWindow(top_frame, orient=tk.HORIZONTAL)
+        top_paned.pack(fill=tk.BOTH, expand=True)
+        
+        route_definition_frame = self._create_route_definition_panel(top_paned)
+        top_paned.add(route_definition_frame, weight=1)
+
+        route_list_frame = self._create_route_list_panel(top_paned)
+        top_paned.add(route_list_frame, weight=2)
+
+        # --- 中間部：シミュレーション実行 ---
+        action_frame = self._create_simulation_actions_panel(main_paned)
+        main_paned.add(action_frame, weight=1)
+        
         # --- 下部：ログ表示 ---
-        log_frame_container = ttk.Frame(main_paned_window)
-        main_paned_window.add(log_frame_container, weight=1)
+        log_frame = self._create_log_display_panel(main_paned)
+        main_paned.add(log_frame, weight=1)
 
-        self._create_simulation_actions(controls_frame)
-        self._create_log_display(log_frame_container)
+    def _create_route_definition_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text="経路定義", padding=10)
 
+        # --- 入力フィールド ---
+        self.entries = {}
+        # 注目点 (Start/Goal) はマップから取得するため、ここでは定義しない
+        labels = {
+            "source": "線源 (x, y, z)",
+            "nuclide": "核種",
+            "activity": "放射能 (Bq)",
+            "step": "評価ステップ幅 (cm)"
+        }
 
-    def _create_simulation_actions(self, parent):
-        action_frame = ttk.LabelFrame(parent, text="シミュレーション & 解析", padding=10)
-        action_frame.pack(fill=tk.X, expand=True, padx=10, pady=10)
+        for i, (key, text) in enumerate(labels.items()):
+            ttk.Label(frame, text=text).grid(row=i, column=0, sticky="w", padx=5, pady=2)
+            if key in ["nuclide", "activity", "step"]:
+                entry = ttk.Entry(frame, width=15)
+                entry.grid(row=i, column=1, columnspan=3, sticky="we", padx=5, pady=2)
+                self.entries[key] = entry
+            else: # 座標入力
+                coord_entries = [ttk.Entry(frame, width=8) for _ in range(3)]
+                self.entries[key] = coord_entries
+                for j, e in enumerate(coord_entries):
+                    e.grid(row=i, column=j+1, padx=2)
 
-        # --- 1. 環境生成 & 線量マップ計算 ---
-        env_frame = ttk.Frame(action_frame)
-        env_frame.pack(fill=tk.X, pady=5)
+        # デフォルト値
+        self.entries["nuclide"].insert(0, "Cs-137")
+        self.entries["activity"].insert(0, "1.0E+12")
+        self.entries["step"].insert(0, "50.0")
+
+        # --- アクションボタン ---
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=len(labels), column=0, columnspan=4, pady=10)
+        ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
+
+        return frame
+
+    def _create_route_list_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text="経路リスト", padding=10)
         
-        env_button = ttk.Button(
-            env_frame, 
-            text="1. 環境入力ファイル (env_input.inp) を生成", 
-            command=self.callbacks["generate_env"]
-        )
-        env_button.pack(side=tk.LEFT, padx=5)
-        
-        load_map_button = ttk.Button(
-            env_frame,
-            text="2. 線量マップ読込 (deposit.out)",
-            command=self.callbacks["load_dose_map"]
-        )
-        load_map_button.pack(side=tk.LEFT, padx=5)
+        cols = ("#", "核種", "放射能", "線源", "ステップ幅")
+        self.tree = ttk.Treeview(frame, columns=cols, show="headings")
+        for col in cols:
+            self.tree.heading(col, text=col)
 
-        # --- セパレータ ---
-        ttk.Separator(action_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        self.tree.column("#", width=30, anchor=tk.CENTER)
+        self.tree.column("核種", width=70)
+        self.tree.column("放射能", width=90)
+        self.tree.column("線源", width=120)
+        self.tree.column("ステップ幅", width=80, anchor=tk.E)
 
-        # --- 2. 経路探索 ---
-        route_frame = ttk.Frame(action_frame)
-        route_frame.pack(fill=tk.X, pady=5)
+        vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         
-        self.weight_var = tk.StringVar(value="10000")
-        
-        ttk.Label(route_frame, text="被ばく回避の重み係数:").pack(side=tk.LEFT, padx=(0, 5))
-        weight_entry = ttk.Entry(route_frame, textvariable=self.weight_var, width=10)
-        weight_entry.pack(side=tk.LEFT, padx=5)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
 
-        calc_route_button = ttk.Button(
-            route_frame,
-            text="3. 最適経路探索 (A*)",
-            command=self.callbacks["calculate_route"],
-        )
-        calc_route_button.pack(side=tk.LEFT, padx=10)
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
 
-    def _create_log_display(self, parent):
-        log_frame = ttk.LabelFrame(parent, text="ログ", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=5, sticky="w")
+        ttk.Button(button_frame, text="選択を削除", command=self.callbacks["delete_route"]).pack(side=tk.LEFT, padx=5)
         
-        self.log_text = tk.Text(log_frame, height=10, state='disabled', wrap='word', bg='#f0f0f0')
-        log_scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
+        return frame
+
+    def _create_simulation_actions_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text="実行と可視化", padding=10)
+
+        # --- 実行フレーム ---
+        run_frame = ttk.Frame(frame)
+        run_frame.pack(fill=tk.X, pady=(0, 5))
+        ttk.Button(run_frame, text="1. 環境線量マップ生成", command=self.callbacks["generate_env_map"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="2. 最適経路を探索", command=self.callbacks["find_optimal_route"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="3. 経路上の詳細線量評価", command=self.callbacks["run_detailed_simulation"]).pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # --- 可視化フレーム ---
+        vis_frame = ttk.Frame(frame)
+        vis_frame.pack(fill=tk.X)
+        ttk.Button(vis_frame, text="経路を3D表示", command=self.callbacks["visualize_routes"]).pack(side=tk.LEFT, padx=5, pady=5)
+
+        return frame
+
+    def _create_log_display_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text="ログ", padding=10)
+        self.log_text = tk.Text(frame, height=10, state='disabled', wrap='word', bg='#f0f0f0')
+        log_scroll = ttk.Scrollbar(frame, command=self.log_text.yview)
         self.log_text.config(yscrollcommand=log_scroll.set)
-        
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        return frame
 
-    def get_weight_factor(self):
-        """重み係数の入力値を取得してfloatで返す"""
+    def get_route_definition_data(self):
+        """経路定義フォームから入力値を取得して辞書として返す"""
         try:
-            return float(self.weight_var.get())
-        except (ValueError, TypeError):
-            return 0.0 # 不正な値の場合は0を返す
+            data = {
+                "source": tuple(float(e.get()) for e in self.entries["source"]),
+                "nuclide": self.entries["nuclide"].get(),
+                "activity": self.entries["activity"].get(),
+                "step": float(self.entries["step"].get())
+            }
+            # 簡単なバリデーション
+            if not data["nuclide"] or not data["activity"]:
+                raise ValueError("核種と放射能は必須です。")
+            float(data["activity"]) # 数値変換できるかテスト
+            return data
+        except ValueError as e:
+            messagebox.showerror("入力エラー", f"無効な入力値があります: {e}")
+            return None
+
+    def update_route_tree(self, routes):
+        """指定された経路リストでTreeviewを更新する"""
+        self.tree.delete(*self.tree.get_children())
+        for i, r in enumerate(routes):
+            values = (
+                i + 1,
+                r.get('nuclide', 'N/A'),
+                r.get('activity', 'N/A'),
+                str(r.get('source', 'N/A')),
+                r.get('step', 'N/A'),
+            )
+            self.tree.insert("", "end", values=values)
+    
+    def get_selected_route_indices(self):
+        """Treeviewで選択されているアイテムのインデックス(0-based)のリストを返す"""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            return []
+        indices = [int(self.tree.item(item, "values")[0]) - 1 for item in selected_items]
+        return sorted(indices, reverse=True) # 逆順ソートで削除時のインデックスエラーを防ぐ
 
     def log(self, message):
         """ログウィジェットにメッセージを追記する"""
         self.log_text.config(state='normal')
         self.log_text.insert(tk.END, message + '\\n')
         self.log_text.config(state='disabled')
-        self.log_text.see(tk.END) # 自動スクロール
+        self.log_text.see(tk.END)
