@@ -42,7 +42,8 @@ class MainApplication(tk.Tk):
         main_paned.add(self.map_editor_view, width=800)
         
         callbacks = {
-            "generate_env_map": self.generate_and_load_dose_map,
+            "generate_env_map": self.generate_env_map,
+            "load_dose_map": self.load_dose_map,
             "find_optimal_route": self.calculate_optimal_route,
             "run_detailed_simulation": self.run_detailed_simulation,
             "add_route": self.add_route,
@@ -122,16 +123,19 @@ class MainApplication(tk.Tk):
         self.log(f"{len(indices)}件の経路を削除しました。")
         self.sim_controls_view.update_route_tree(self.routes)
 
-    def generate_and_load_dose_map(self):
-        """環境全体の線量マップを生成・読み込みする一連の処理"""
-        self.log("環境線量マップの生成を開始します...")
-        # (仮) PHITS実行とファイルI/Oはまだ実装しない
-        # generate_environment_input_file(self.map_data)
-        # self.log("PHITS入力ファイルを生成しました。")
-        # self.log("PHITSを実行します... (この処理は数分かかることがあります)")
-        
-        # ダミーの線量マップを読み込む
-        dose_data = load_and_parse_dose_map() # ファイル選択ダイアログが開く
+    def generate_env_map(self):
+        """環境入力ファイル(env_input.inp)を生成する（PHITS実行は行わない）。"""
+        self.log("環境入力ファイルの生成を開始します...")
+        try:
+            generate_environment_input_file(self.map_data)
+            self.log("PHITS環境入力ファイルを生成しました（保存済み）。")
+        except Exception as e:
+            self.log(f"環境入力生成でエラー: {e}")
+
+    def load_dose_map(self):
+        """ユーザ操作で deposit.out を読み込み、ヒートマップを適用する（別ボタン）。"""
+        self.log("線量マップ読み込みを開始します...")
+        dose_data = load_and_parse_dose_map()
         if dose_data:
             self.dose_map = dose_data
             self.map_editor_view.apply_heatmap(self.dose_map, self.map_data)

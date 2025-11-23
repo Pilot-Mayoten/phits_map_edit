@@ -56,7 +56,6 @@ class SimulationControlsView(tk.Frame):
         self.entries = {}
         # 注目点 (Start/Goal) はマップから取得するため、ここでは定義しない
         labels = {
-            "source": "線源 (x, y, z)",
             "nuclide": "核種",
             "activity": "放射能 (Bq)",
             "step": "評価ステップ幅 (cm)"
@@ -64,15 +63,9 @@ class SimulationControlsView(tk.Frame):
 
         for i, (key, text) in enumerate(labels.items()):
             ttk.Label(frame, text=text).grid(row=i, column=0, sticky="w", padx=5, pady=2)
-            if key in ["nuclide", "activity", "step"]:
-                entry = ttk.Entry(frame, width=15)
-                entry.grid(row=i, column=1, columnspan=3, sticky="we", padx=5, pady=2)
-                self.entries[key] = entry
-            else: # 座標入力
-                coord_entries = [ttk.Entry(frame, width=8) for _ in range(3)]
-                self.entries[key] = coord_entries
-                for j, e in enumerate(coord_entries):
-                    e.grid(row=i, column=j+1, padx=2)
+            entry = ttk.Entry(frame, width=15)
+            entry.grid(row=i, column=1, columnspan=3, sticky="we", padx=5, pady=2)
+            self.entries[key] = entry
 
         # デフォルト値
         self.entries["nuclide"].insert(0, "Cs-137")
@@ -89,15 +82,14 @@ class SimulationControlsView(tk.Frame):
     def _create_route_list_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路リスト", padding=10)
         
-        cols = ("#", "核種", "放射能", "線源", "ステップ幅")
+        cols = ("#", "核種", "放射能", "ステップ幅")
         self.tree = ttk.Treeview(frame, columns=cols, show="headings")
         for col in cols:
             self.tree.heading(col, text=col)
 
         self.tree.column("#", width=30, anchor=tk.CENTER)
-        self.tree.column("核種", width=70)
-        self.tree.column("放射能", width=90)
-        self.tree.column("線源", width=120)
+        self.tree.column("核種", width=120)
+        self.tree.column("放射能", width=120)
         self.tree.column("ステップ幅", width=80, anchor=tk.E)
 
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
@@ -123,9 +115,10 @@ class SimulationControlsView(tk.Frame):
         # --- 実行フレーム ---
         run_frame = ttk.Frame(frame)
         run_frame.pack(fill=tk.X, pady=(0, 5))
-        ttk.Button(run_frame, text="1. 環境線量マップ生成", command=self.callbacks["generate_env_map"]).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(run_frame, text="2. 最適経路を探索", command=self.callbacks["find_optimal_route"]).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(run_frame, text="3. 経路上の詳細線量評価", command=self.callbacks["run_detailed_simulation"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None)).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="4. 経路上の詳細線量評価", command=self.callbacks["run_detailed_simulation"]).pack(side=tk.LEFT, padx=5, pady=5)
         
         # --- 可視化フレーム ---
         vis_frame = ttk.Frame(frame)
@@ -169,7 +162,6 @@ class SimulationControlsView(tk.Frame):
                 i + 1,
                 r.get('nuclide', 'N/A'),
                 r.get('activity', 'N/A'),
-                str(r.get('source', 'N/A')),
                 r.get('step', 'N/A'),
             )
             self.tree.insert("", "end", values=values)

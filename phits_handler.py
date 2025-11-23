@@ -23,15 +23,15 @@ def generate_environment_input_file(map_data):
     phits_input_lines = [
         "[ T i t l e ]",
         "Environment Definition for Dose Map Calculation",
-        "\\n",
+        "\n",
         "[ P a r a m e t e r s ]",
         "   maxcas   = 10000",
         "   maxbch   = 10",
-        "\\n",
+        "\n",
         "[ M a t e r i a l ]",
         "  mat[1]   N 8 O 2         $ Air",
         "  mat[2]   Fe 1.0          $ Iron",
-        "\\n"
+        "\n"
     ]
 
     surface_lines = ["[ S u r f a c e ]"]
@@ -95,15 +95,15 @@ def generate_environment_input_file(map_data):
     )
     
     phits_input_lines.extend(surface_lines)
-    phits_input_lines.append("\\n")
+    phits_input_lines.append("\n")
     phits_input_lines.extend(cell_lines)
-    phits_input_lines.append("\\n")
+    phits_input_lines.append("\n")
 
     # --- 線源定義 (複数対応) ---
     if not source_coords:
         phits_input_lines.append("[ S o u r c e ]")
         phits_input_lines.append("$ --- 警告: 線源がマップ上に配置されていません ---")
-        phits_input_lines.append("\\n")
+        phits_input_lines.append("\n")
     else:
         for src_x, src_y, src_z in source_coords:
             phits_input_lines.append("[ S o u r c e ]")
@@ -121,7 +121,7 @@ def generate_environment_input_file(map_data):
                 "    dtime = -10.0",
                 "     norm = 0              $ Output in [/sec]"
             ])
-            phits_input_lines.append("\\n")
+            phits_input_lines.append("\n")
 
     # --- 線量マップ定義 [T-Deposit] ---
     phits_input_lines.extend([
@@ -146,11 +146,11 @@ def generate_environment_input_file(map_data):
         "     file = deposit_xy.out",
         "     part = all",
         "   epsout = 1",
-        "\\n"
+        "\n"
     ])
 
-    phits_input_lines.append("[ E n d ]\\n")
-    final_input_string = "\\n".join(phits_input_lines)
+    phits_input_lines.append("[ E n d ]\n")
+    final_input_string = "\n".join(phits_input_lines)
     
     filepath = filedialog.asksaveasfilename(
         defaultextension=".inp",
@@ -164,9 +164,93 @@ def generate_environment_input_file(map_data):
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(final_input_string)
-        messagebox.showinfo("生成成功", f"保存しました:\\n{filepath}")
+        messagebox.showinfo("生成成功", f"保存しました:\n{filepath}")
     except Exception as e:
         messagebox.showerror("保存エラー", f"{e}")
+
+
+def generate_detailed_simulation_files(routes, output_dir):
+    """
+    routes: list of route dicts with 'detailed_path' containing [(x,y,z), ...]
+    output_dir: destination folder
+
+    振る舞い:
+    - ユーザに既存の環境入力ファイル(env_input.inp)を選択してもらい、その内容を各詳細入力ファイルの先頭に挿入します。
+    - `template.inp` を読み、[ S o u r c e ] セクションを削除して検出器位置だけ差し替えます。
+    - 各評価点ごとに個別の inp ファイルを生成する。
+    """
+    # テンプレート読み込み
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'template.inp'), 'r', encoding='utf-8') as tf:
+            template_text = tf.read()
+    except Exception as e:
+        messagebox.showerror("テンプレート読み込み失敗", f"template.inp の読み込みに失敗しました: {e}")
+        return False, 0
+
+    # ユーザに env_input.inp（環境定義）を選択してもらう
+    env_path = filedialog.askopenfilename(title='環境定義ファイル(env_input.inp)を選択（各詳細入力に挿入する）', filetypes=[('PHITS Input','*.inp'),('All','*.*')])
+    env_text = ''
+    if env_path:
+        try:
+            with open(env_path, 'r', encoding='utf-8', errors='ignore') as ef:
+                env_text = ef.read()
+        except Exception as e:
+            messagebox.showwarning('警告', f'env_input ファイルの読み込みに失敗しました: {e}。env を挿入せずに生成します。')
+
+    # ソース定義をテンプレートから削除する (簡易的に [ S o u r c e ] ～ 次の [ の先頭まで)
+    template_no_source = re.sub(r"\[\s*S\s*o\s*u\s*r\s*c\s*e\s*\].*?(?=\n\[|\Z)", "", template_text, flags=re.S|re.I)
+
+    file_count = 0
+    try:
+        for ri, route in enumerate(routes, start=1):
+            route_dir = os.path.join(output_dir, f"route_{ri}")
+            os.makedirs(route_dir, exist_ok=True)
+
+            detailed = route.get('detailed_path', [])
+            for idx, pt in enumerate(detailed, start=1):
+                # pt は (x, y, z) の中心座標を想定
+                det_x, det_y, det_z = pt
+
+                # 既存 env をファイルにコピー into route_dir for traceability
+                if env_text:
+                    try:
+                        with open(os.path.join(route_dir, 'env_input.inp'), 'w', encoding='utf-8') as ef:
+                            ef.write(env_text)
+                    except Exception:
+                        pass
+
+                # テンプレートに値を埋める
+                # route に含まれる核種・放射能を使用（存在しなければテンプレート内の既定を残す）
+                nuclide = route.get('nuclide', 'Cs-137')
+                activity = route.get('activity', '1.0E+12')
+                maxcas = route.get('maxcas', 10000)
+                maxbch = route.get('maxbch', 10)
+
+                filled = template_no_source
+                filled = filled.replace('{det_x}', f"{det_x:.3f}")
+                filled = filled.replace('{det_y}', f"{det_y:.3f}")
+                filled = filled.replace('{det_z}', f"{det_z:.3f}")
+                filled = filled.replace('{nuclide_name}', str(nuclide))
+                filled = filled.replace('{activity_value}', str(activity))
+                filled = filled.replace('{maxcas_value}', str(maxcas))
+                filled = filled.replace('{maxbch_value}', str(maxbch))
+
+                # ソースは env_input.inp に含まれているものを参照する前提なので削除済み
+                out_name = os.path.join(route_dir, f"detailed_point_{idx:03d}.inp")
+                with open(out_name, 'w', encoding='utf-8') as out_f:
+                    # 先頭に env を挿入してからテンプレートを置く
+                    if env_text:
+                        out_f.write(env_text)
+                        out_f.write("\n")
+                    out_f.write(filled)
+
+                file_count += 1
+
+        messagebox.showinfo('生成完了', f'{file_count} 件の詳細PHITS入力ファイルを作成しました。')
+        return True, file_count
+    except Exception as e:
+        messagebox.showerror('生成失敗', f'詳細入力ファイルの生成中にエラーが発生しました: {e}')
+        return False, file_count
 
 def load_and_parse_dose_map():
     """
@@ -184,33 +268,95 @@ def load_and_parse_dose_map():
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
-        
-        all_found_values = []
-        
-        for line in lines:
-            line = line.strip()
-            if not line or ":" in line or line.startswith("#") or "=" in line:
-                continue
-            if not any(c.isdigit() for c in line):
-                continue
 
-            parts = re.split(r'\\s+', line)
-            for x in parts:
+        expected_count = MAP_ROWS * MAP_COLS
+
+        # 1) ヘッダを避け、連続した「数値行ブロック」を探す
+        groups = []
+        current = []
+        for line in lines:
+            s = line.strip()
+            if not s or ":" in s or s.startswith("#") or "=" in s:
+                if current:
+                    groups.append(current)
+                    current = []
+                continue
+            if not any(c.isdigit() for c in s):
+                if current:
+                    groups.append(current)
+                    current = []
+                continue
+            # この行は数値を含む可能性あり -> グループに追加
+            current.append(s)
+        if current:
+            groups.append(current)
+
+        # 2) 各グループから数値を抽出し、期待数を満たすブロックを選択
+        best_nums = []
+        best_diff = None
+        for grp in groups:
+            nums = []
+            for ln in grp:
+                parts = re.split(r"\s+", ln)
+                for tok in parts:
+                    try:
+                        nums.append(float(tok))
+                    except ValueError:
+                        continue
+            if not nums:
+                continue
+            if len(nums) >= expected_count:
+                diff = len(nums) - expected_count
+                if best_diff is None or diff < best_diff:
+                    best_diff = diff
+                    best_nums = nums
+        # 3) 期待数を満たすグループが無ければ、最も多くの数を持つグループを選ぶ
+        if not best_nums and groups:
+            # find group with max numeric tokens
+            max_cnt = 0
+            for grp in groups:
+                nums = []
+                for ln in grp:
+                    parts = re.split(r"\s+", ln)
+                    for tok in parts:
+                        try:
+                            nums.append(float(tok))
+                        except ValueError:
+                            continue
+                if len(nums) > max_cnt:
+                    max_cnt = len(nums)
+                    best_nums = nums
+
+        # fallback: 全体から抽出 (最終手段)
+        if not best_nums:
+            all_text = "".join(lines)
+            num_pattern = r"[-+]?\d*\.\d+(?:[eE][-+]?\d+)?|[-+]?\d+(?:[eE][-+]?\d+)?"
+            raw_numbers = re.findall(num_pattern, all_text)
+            best_nums = []
+            for tok in raw_numbers:
                 try:
-                    all_found_values.append(float(x))
+                    best_nums.append(float(tok))
                 except ValueError:
                     continue
 
-        expected_count = MAP_ROWS * MAP_COLS
-        
-        if len(all_found_values) < expected_count:
-            messagebox.showwarning("データ不足", f"出力ファイルから十分な数のデータを読み込めませんでした。")
+        # デバッグ出力: 選択した数値列を保存
+        input_dir = os.path.dirname(filepath)
+        raw_path = os.path.join(input_dir, "debug_raw_values.txt")
+        try:
+            with open(raw_path, "w", encoding='utf-8') as f_debug:
+                f_debug.write(f"Total found: {len(best_nums)}\nNeeded: {expected_count}\n")
+                for idx, val in enumerate(best_nums):
+                    f_debug.write(f"[{idx}] {val}\n")
+        except Exception:
+            pass
+
+        if len(best_nums) < expected_count:
+            messagebox.showwarning("データ不足", f"出力ファイルから十分な数のデータを読み込めませんでした。詳細は {raw_path} を確認してください。")
             return None
 
-        relevant_data = all_found_values[:expected_count]
-        
+        relevant_data = best_nums[:expected_count]
         idx = 0
-        for r in range(MAP_ROWS): 
+        for r in range(MAP_ROWS):
             for c in range(MAP_COLS):
                 dose_map[r][c] = relevant_data[idx]
                 idx += 1
@@ -221,70 +367,3 @@ def load_and_parse_dose_map():
     except Exception as e:
         messagebox.showerror("読み込みエラー", f"{e}")
         return None
-
-# ==========================================================================
-#  詳細評価用のファイル生成と実行 (1021.pyより移植・統合)
-# ==========================================================================
-
-def _get_template_content():
-    """アプリケーションと同じディレクトリからtemplate.inpを読み込む"""
-    try:
-        # スクリプト自身の絶対パスからディレクトリを取得
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        template_path = os.path.join(script_dir, "template.inp")
-        
-        with open(template_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        messagebox.showerror("テンプレートエラー", 
-                             f"template.inpが見つかりません。\\n"
-                             f"実行ファイルと同じディレクトリに配置してください。\\n"
-                             f"検索パス: {template_path}")
-        return None
-    except Exception as e:
-        messagebox.showerror("テンプレート読込エラー", f"エラーが発生しました: {e}")
-        return None
-
-def _generate_input_text_for_detail(template, det_pos, route_info):
-    """詳細評価用の入力ファイル文字列を生成する"""
-    return template.format(
-        det_x=det_pos[0], det_y=det_pos[1], det_z=det_pos[2],
-        src_x=route_info["source"][0], 
-        src_y=route_info["source"][1], 
-        src_z=route_info["source"][2],
-        nuclide_name=route_info["nuclide"],
-        activity_value=route_info["activity"],
-        maxcas_value="1000",  # 将来的にはUIから取得する
-        maxbch_value="5"
-    )
-
-def generate_detailed_simulation_files(routes, output_dir_base):
-    """
-    登録された全経路に対して、詳細評価用のPHITS入力ファイル群を生成する。
-    """
-    template_content = _get_template_content()
-    if not template_content:
-        return False, 0 # テンプレートがなければ失敗
-
-    total_files = 0
-    for idx, route in enumerate(routes):
-        route_dir = os.path.join(output_dir_base, f"route_{idx+1:03}")
-        os.makedirs(route_dir, exist_ok=True)
-
-        # 評価点リストの計算はroute_calculatorに任せる想定
-        # ここではダミーとして空リストを仮定
-        path_points = route.get("detailed_path", []) 
-        if not path_points:
-            continue
-
-        for i, point_phys_coords in enumerate(path_points):
-            input_text = _generate_input_text_for_detail(template_content, 
-                                                         point_phys_coords, 
-                                                         route)
-            
-            input_filename = os.path.join(route_dir, f"input_{i:03}.inp")
-            with open(input_filename, "w", encoding="utf-8") as f:
-                f.write(input_text)
-            total_files += 1
-            
-    return True, total_files
