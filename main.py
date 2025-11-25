@@ -144,25 +144,48 @@ class MainApplication(tk.Tk):
             self.log("線量マップの読み込みがキャンセルされたか、失敗しました。")
 
     def calculate_optimal_route(self):
-        """A*で最適経路を探索"""
+        """A*で最適経路を探索し、選択中の経路に適用する"""
         self.log("最適経路の探索を開始します...")
-        start, goal, middle = self.find_special_points()
-        if not start or not goal:
-            messagebox.showwarning("設定エラー", "「スタート」と「ゴール」を配置してください。")
+
+        # 1. 探索対象のルートを選択
+        selected_indices = self.sim_controls_view.get_selected_route_indices()
+        if not selected_indices:
+            messagebox.showwarning("設定エラー", "「最適経路を探索」を適用する経路をリストから選択してください。")
+            return
+        # 複数選択は許可しない
+        if len(selected_indices) > 1:
+            messagebox.showwarning("設定エラー", "経路は1つだけ選択してください。")
+            return
+        
+        route_index = selected_indices[0]
+        target_route = self.routes[route_index]
+
+        # 2. 経路計算に必要な情報を取得
+        start_grid = target_route.get("start")
+        goal_grid = target_route.get("goal")
+        middle_grid = target_route.get("middle")
+
+        if not start_grid or not goal_grid:
+            messagebox.showwarning("設定エラー", "選択された経路に「スタート」と「ゴール」が設定されていません。")
             return
 
-        # (仮) 現状は重み係数をダイアログから取得
+        # 3. 重み係数を取得
         weight_str = simpledialog.askstring("設定", "被ばく回避の重み係数:", initialvalue="10000")
         try:
             weight = float(weight_str)
         except (ValueError, TypeError):
             weight = 0.0
 
-        path = find_optimal_route(start, goal, middle, self.map_data, self.dose_map, weight)
+        # 4. A*探索を実行
+        path = find_optimal_route(start_grid, goal_grid, middle_grid, self.map_data, self.dose_map, weight)
         
         if path:
+            # 5. 見つかった経路(グリッド座標)をルート情報に保存
+            target_route["a_star_path"] = path
             self.map_editor_view.visualize_path(path, self.map_data)
-            self.log(f"最適経路を発見しました (ステップ数: {len(path)})。")
+            self.log(f"最適経路を発見 (ステップ数: {len(path)})。経路 {route_index + 1} に適用しました。")
+            # Treeviewの表示を更新 (A* Path適用済みなどを表示するため)
+            self.sim_controls_view.update_route_tree(self.routes)
         else:
             messagebox.showerror("探索失敗", "経路が見つかりませんでした。")
             self.log("最適経路が見つかりませんでした。")
@@ -185,18 +208,34 @@ class MainApplication(tk.Tk):
 
         # 各経路について、詳細な評価点群を計算
         for route in self.routes:
-            start_phys = get_physical_coords(*route["start"])
-            goal_phys = get_physical_coords(*route["goal"])
-            middle_phys = get_physical_coords(*route["middle"]) if route["middle"] else None
-            
-            # 物理座標系の中心点を計算
-            start_center = ((start_phys[0]+start_phys[1])/2, (start_phys[2]+start_phys[3])/2, (start_phys[4]+start_phys[5])/2)
-            goal_center = ((goal_phys[0]+goal_phys[1])/2, (goal_phys[2]+goal_phys[3])/2, (goal_phys[4]+goal_phys[5])/2)
-            middle_center = ((middle_phys[0]+middle_phys[1])/2, (middle_phys[2]+middle_phys[3])/2, (middle_phys[4]+middle_phys[5])/2) if middle_phys else None
+            # A*経路が保存されていればそれを使う
+            if "a_star_path" in route and route["a_star_path"]:
+                self.log(f"経路 {self.routes.index(route)+1} はA*経路を使用します。")
+                # グリッド座標のリストを物理座標(中心点)のリストに変換
+                path_phys = []
+                for r, c in route["a_star_path"]:
+                    phys_coords = get_physical_coords(r, c)
+                    center = ((phys_coords[0] + phys_coords[1]) / 2,
+                              (phys_coords[2] + phys_coords[3]) / 2,
+                              (phys_coords[4] + phys_coords[5]) / 2)
+                    path_phys.append(center)
+                route["detailed_path"] = path_phys
+            else:
+                # A*経路がない場合は、従来通り直線で結ぶ
+                self.log(f"経路 {self.routes.index(route)+1} は直線経路を使用します。")
+                start_phys = get_physical_coords(*route["start"])
+                goal_phys = get_physical_coords(*route["goal"])
+                middle_phys = get_physical_coords(*route["middle"]) if route["middle"] else None
+                
+                # 物理座標系の中心点を計算
+                start_center = ((start_phys[0]+start_phys[1])/2, (start_phys[2]+start_phys[3])/2, (start_phys[4]+start_phys[5])/2)
+                goal_center = ((goal_phys[0]+goal_phys[1])/2, (goal_phys[2]+goal_phys[3])/2, (goal_phys[4]+goal_phys[5])/2)
+                middle_center = ((middle_phys[0]+middle_phys[1])/2, (middle_phys[2]+middle_phys[3])/2, (middle_phys[4]+middle_phys[5])/2) if middle_phys else None
 
-            route["detailed_path"] = compute_detailed_path_points(
-                start_center, middle_center, goal_center, route["step"]
-            )
+                route["detailed_path"] = compute_detailed_path_points(
+                    start_center, middle_center, goal_center, route["step"]
+                )
+
             self.log(f"経路{self.routes.index(route)+1}の評価点({len(route['detailed_path'])}点)を計算しました。")
 
         # PHITSハンドラにファイル生成を依頼
@@ -210,8 +249,8 @@ class MainApplication(tk.Tk):
             messagebox.showerror("生成失敗", "PHITS入力ファイルの生成に失敗しました。詳細はログを確認してください。")
 
     def visualize_routes(self):
-        """登録された経路を3Dで可視化する"""
-        self.log("経路の3D可視化を開始します...")
+        """登録された経路を2Dで可視化する"""
+        self.log("経路の2D可視化を開始します...")
         if not self.routes:
             messagebox.showinfo("情報", "表示する経路がありません。")
             return
@@ -220,20 +259,33 @@ class MainApplication(tk.Tk):
         for route in self.routes:
             if "detailed_path" not in route:
                 self.log(f"経路{self.routes.index(route)+1}の評価点が未計算のため、計算します。")
-                start_phys = get_physical_coords(*route["start"])
-                goal_phys = get_physical_coords(*route["goal"])
-                middle_phys = get_physical_coords(*route["middle"]) if route["middle"] else None
-                
-                start_center = ((start_phys[0]+start_phys[1])/2, (start_phys[2]+start_phys[3])/2, (start_phys[4]+start_phys[5])/2)
-                goal_center = ((goal_phys[0]+goal_phys[1])/2, (goal_phys[2]+goal_phys[3])/2, (goal_phys[4]+goal_phys[5])/2)
-                middle_center = ((middle_phys[0]+middle_phys[1])/2, (middle_phys[2]+middle_phys[3])/2, (middle_phys[4]+middle_phys[5])/2) if middle_phys else None
+                # A*経路が保存されていればそれを使う
+                if "a_star_path" in route and route["a_star_path"]:
+                    path_phys = []
+                    for r, c in route["a_star_path"]:
+                        phys_coords = get_physical_coords(r, c)
+                        center = ((phys_coords[0] + phys_coords[1]) / 2,
+                                  (phys_coords[2] + phys_coords[3]) / 2,
+                                  (phys_coords[4] + phys_coords[5]) / 2)
+                        path_phys.append(center)
+                    route["detailed_path"] = path_phys
+                else:
+                    # A*経路がない場合は、従来通り直線で結ぶ
+                    start_phys = get_physical_coords(*route["start"])
+                    goal_phys = get_physical_coords(*route["goal"])
+                    middle_phys = get_physical_coords(*route["middle"]) if route["middle"] else None
+                    
+                    start_center = ((start_phys[0]+start_phys[1])/2, (start_phys[2]+start_phys[3])/2, (start_phys[4]+start_phys[5])/2)
+                    goal_center = ((goal_phys[0]+goal_phys[1])/2, (goal_phys[2]+goal_phys[3])/2, (goal_phys[4]+goal_phys[5])/2)
+                    middle_center = ((middle_phys[0]+middle_phys[1])/2, (middle_phys[2]+middle_phys[3])/2, (middle_phys[4]+middle_phys[5])/2) if middle_phys else None
 
-                route["detailed_path"] = compute_detailed_path_points(
-                    start_center, middle_center, goal_center, route["step"]
-                )
-
-        visualizer.visualize_routes_3d(self.routes)
-        self.log("3D可視化ウィンドウを表示しました。")
+                    route["detailed_path"] = compute_detailed_path_points(
+                        start_center, middle_center, goal_center, route["step"]
+                    )
+        
+        sources = self.find_source_points()
+        visualizer.visualize_routes_2d(self.routes, sources)
+        self.log("2D可視化ウィンドウを表示しました。")
 
     # ==========================================================================
     #  ヘルパー関数
@@ -256,6 +308,19 @@ class MainApplication(tk.Tk):
                 elif cell_id == 3: goal = (r, c)
                 elif cell_id == 4: middle = (r, c)
         return start, goal, middle
+
+    def find_source_points(self):
+        """マップデータから全ての線源の物理中心座標をリストで返す"""
+        sources = []
+        for r in range(MAP_ROWS):
+            for c in range(MAP_COLS):
+                if self.map_data[r][c] == 9: # 9は放射線源のID
+                    x_min, x_max, y_min, y_max, z_min, z_max = get_physical_coords(r, c)
+                    center_x = (x_min + x_max) / 2.0
+                    center_y = (y_min + y_max) / 2.0
+                    center_z = (z_min + z_max) / 2.0
+                    sources.append((center_x, center_y, center_z))
+        return sources
 
     def log(self, message):
         print(message)

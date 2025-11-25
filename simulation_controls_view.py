@@ -123,7 +123,7 @@ class SimulationControlsView(tk.Frame):
         # --- 可視化フレーム ---
         vis_frame = ttk.Frame(frame)
         vis_frame.pack(fill=tk.X)
-        ttk.Button(vis_frame, text="経路を3D表示", command=self.callbacks["visualize_routes"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(vis_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"]).pack(side=tk.LEFT, padx=5, pady=5)
 
         return frame
 
@@ -140,7 +140,6 @@ class SimulationControlsView(tk.Frame):
         """経路定義フォームから入力値を取得して辞書として返す"""
         try:
             data = {
-                "source": tuple(float(e.get()) for e in self.entries["source"]),
                 "nuclide": self.entries["nuclide"].get(),
                 "activity": self.entries["activity"].get(),
                 "step": float(self.entries["step"].get())

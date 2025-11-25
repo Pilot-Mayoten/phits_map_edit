@@ -169,36 +169,219 @@ def generate_environment_input_file(map_data):
         messagebox.showerror("保存エラー", f"{e}")
 
 
+class AdvancedPhitsMerger:
+    def __init__(self, base_content, merge_content):
+        # 追記するだけのセクションキーを先に定義
+        self.append_only_keys = ['source', 'tdeposit', 'tend']
+
+        # 正規化されたキー -> (元のヘッダ名, [行...]) の辞書
+        self.base_sections = self._parse(base_content, is_base=True)
+        self.merge_sections = self._parse(merge_content, is_base=False)
+        
+        # ID -> ID のマッピング
+        self.id_maps = {
+            'mat': {},   # Material
+            'cell': {},  # Cell
+            'surf': {},  # Surface
+            'trans': {}  # Transform
+        }
+
+    def _parse(self, text, is_base):
+        sections = {}
+        header_pattern = re.compile(r'^\s*\[\s*([^\]]+?)\s*\]', re.IGNORECASE)
+        current_key = None
+        current_header = None
+        
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            match = header_pattern.match(line)
+            if match:
+                header_text = match.group(0).strip()
+                header_name = match.group(1)
+                key = re.sub(r'[^a-zA-Z0-9]', '', header_name).lower()
+
+                # 複数ありうるセクション (sourceなど) は一意なキーを持たせる
+                if key in self.append_only_keys:
+                    key = f"{key}_{i}"
+
+                if key not in sections:
+                    sections[key] = (header_text, [])
+                current_key = key
+            elif current_key:
+                sections[current_key][1].append(line)
+        return sections
+
+    def merge(self):
+        """マージ処理のメイン関数"""
+        self._renumber_and_map_ids()
+        self._update_references()
+        return self._render_output()
+
+    def _renumber_and_map_ids(self):
+        id_patterns = {
+            'mat': re.compile(r'^\s*mat\s*\[\s*(\d+)\s*\]', re.IGNORECASE),
+            'cell': re.compile(r'^\s*(\d+)\s+'),
+            'surf': re.compile(r'^\s*(\d+)\s+'),
+            'trans': re.compile(r'^\s*\*?Tr(\d+)', re.IGNORECASE)
+        }
+        section_keys = {'mat': 'material', 'cell': 'cell', 'surf': 'surface', 'trans': 'transform'}
+
+        for id_type, pattern in id_patterns.items():
+            key = section_keys[id_type]
+            base_ids = set()
+            if key in self.base_sections:
+                for line in self.base_sections[key][1]:
+                    match = pattern.match(line)
+                    if match:
+                        base_ids.add(int(match.group(1)))
+            
+            max_base_id = max(base_ids) if base_ids else 0
+            next_id = max_base_id + 1
+
+            if key in self.merge_sections:
+                new_lines = []
+                for line in self.merge_sections[key][1]:
+                    match = pattern.match(line)
+                    if not match:
+                        new_lines.append(line)
+                        continue
+                    
+                    old_id = int(match.group(1))
+                    if old_id in base_ids:
+                        new_id = next_id
+                        self.id_maps[id_type][old_id] = new_id
+                        
+                        if id_type == 'mat':
+                            new_id_str = f"mat[{new_id}]"
+                            # mat[1] H 2... -> mat[101] H 2...
+                            line_parts = line.split()
+                            line_parts[0] = new_id_str
+                            line = "   " + " ".join(line_parts)
+                        elif id_type == 'trans':
+                            line = pattern.sub(f"*Tr{new_id}", line, 1)
+                        else:
+                            new_id_str = str(new_id)
+                            line = pattern.sub(f"{new_id_str} ", line, 1)
+
+                        next_id += 1
+                    new_lines.append(line)
+                self.merge_sections[key] = (self.merge_sections[key][0], new_lines)
+
+    def _update_references(self):
+        if 'cell' not in self.merge_sections:
+            return
+
+        new_cell_lines = []
+        # セル行から cell_id, mat_id, density を取得
+        cell_line_pattern = re.compile(r'^\s*(\d+)\s+(-?\d+)\s+([^ ]+)\s+(.*)', re.IGNORECASE)
+
+        for line in self.merge_sections['cell'][1]:
+            # コメントや不正な行はそのまま
+            if not cell_line_pattern.match(line):
+                new_cell_lines.append(line)
+                continue
+
+            # 1. Material IDの参照更新
+            mat_id_match = re.search(r'^\s*\d+\s+(-?\d+)', line)
+            if mat_id_match:
+                mat_id = int(mat_id_match.group(1))
+                abs_mat_id = abs(mat_id)
+                if abs_mat_id in self.id_maps['mat']:
+                    new_mat_id = self.id_maps['mat'][abs_mat_id]
+                    # 符号を維持して置換
+                    line = re.sub(str(mat_id), f'{"-" if mat_id < 0 else ""}{new_mat_id}', line, 1)
+
+            # 2. Surface ID と Transform ID の参照更新
+            rest_of_line = cell_line_pattern.match(line).group(4)
+            
+            # Surface参照 ([+\-#]?\d+)
+            def replace_surf(m):
+                full_match, prefix, old_id_str = m.groups()
+                old_id = int(old_id_str)
+                new_id = self.id_maps['surf'].get(old_id, old_id)
+                return f"{prefix}{new_id}"
+            
+            rest_of_line = re.sub(r'(([+\-#])(\d+))', replace_surf, rest_of_line)
+            
+            # Transform参照 (trcl\s*=\s*\(\s*\d+\s*\))
+            def replace_trans(m):
+                prefix, old_id_str, suffix = m.groups()
+                old_id = int(old_id_str)
+                new_id = self.id_maps['trans'].get(old_id, old_id)
+                return f"{prefix}{new_id}{suffix}"
+
+            rest_of_line = re.sub(r'(trcl\s*=\s*\(\s*)(\d+)(\s*\))', replace_trans, rest_of_line, flags=re.IGNORECASE)
+
+            # 更新した行を再構築
+            parts = cell_line_pattern.match(line)
+            updated_line = f"  {parts.group(1)} {parts.group(2)} {parts.group(3)} {rest_of_line}"
+            new_cell_lines.append(updated_line)
+        
+        self.merge_sections['cell'] = (self.merge_sections['cell'][0], new_cell_lines)
+
+    def _render_output(self):
+        final_sections = self.base_sections.copy()
+
+        for key, (header, lines) in self.merge_sections.items():
+            # append_only_keys のいずれかで始まるキーはそのまま追加（source_*, tdeposit_* 等）
+            if any(key.startswith(k) for k in self.append_only_keys) or key in self.append_only_keys:
+                final_sections[key] = (header, lines)
+            elif key in final_sections:
+                # 既存セクションに重複を排除して追記
+                base_header, base_lines = final_sections[key]
+                existing_lines_stripped = {l.strip() for l in base_lines if l.strip()}
+                
+                for line in lines:
+                    if line.strip() and line.strip() not in existing_lines_stripped:
+                        base_lines.append(line)
+            else:
+                # 新しいセクションとして追加
+                final_sections[key] = (header, lines)
+
+        # PHITSの標準的なセクション順序
+        order = ['title', 'parameters', 'material', 'surface', 'cell', 'transform', 'source', 'tdeposit', 'tend']
+        
+        output_lines = []
+        written_keys = set()
+
+        for key_prefix in order:
+            # source_0, source_1 などを順に処理
+            keys_to_write = sorted([k for k in final_sections if k.startswith(key_prefix)])
+            for key in keys_to_write:
+                if key not in written_keys:
+                    header, lines = final_sections[key]
+                    output_lines.append(header)
+                    output_lines.extend(l for l in lines if l.strip()) # 空行を除外して追加
+                    output_lines.append('')
+                    written_keys.add(key)
+        
+        return "\n".join(output_lines)
+
+
 def generate_detailed_simulation_files(routes, output_dir):
     """
-    routes: list of route dicts with 'detailed_path' containing [(x,y,z), ...]
-    output_dir: destination folder
-
-    振る舞い:
-    - ユーザに既存の環境入力ファイル(env_input.inp)を選択してもらい、その内容を各詳細入力ファイルの先頭に挿入します。
-    - `template.inp` を読み、[ S o u r c e ] セクションを削除して検出器位置だけ差し替えます。
-    - 各評価点ごとに個別の inp ファイルを生成する。
+    AdvancedPhitsMergerを使用して、経路上の各評価点に対するPHITS入力ファイルを生成する。
     """
-    # テンプレート読み込み
     try:
-        with open(os.path.join(os.path.dirname(__file__), 'template.inp'), 'r', encoding='utf-8') as tf:
-            template_text = tf.read()
+        with open(os.path.join(os.path.dirname(__file__), 'template.inp'), 'r', encoding='utf-8') as f:
+            template_text = f.read()
     except Exception as e:
-        messagebox.showerror("テンプレート読み込み失敗", f"template.inp の読み込みに失敗しました: {e}")
+        messagebox.showerror("テンプレート読み込み失敗", f"template.inpの読み込みに失敗: {e}")
         return False, 0
 
-    # ユーザに env_input.inp（環境定義）を選択してもらう
-    env_path = filedialog.askopenfilename(title='環境定義ファイル(env_input.inp)を選択（各詳細入力に挿入する）', filetypes=[('PHITS Input','*.inp'),('All','*.*')])
-    env_text = ''
-    if env_path:
-        try:
-            with open(env_path, 'r', encoding='utf-8', errors='ignore') as ef:
-                env_text = ef.read()
-        except Exception as e:
-            messagebox.showwarning('警告', f'env_input ファイルの読み込みに失敗しました: {e}。env を挿入せずに生成します。')
-
-    # ソース定義をテンプレートから削除する (簡易的に [ S o u r c e ] ～ 次の [ の先頭まで)
-    template_no_source = re.sub(r"\[\s*S\s*o\s*u\s*r\s*c\s*e\s*\].*?(?=\n\[|\Z)", "", template_text, flags=re.S|re.I)
+    env_path = filedialog.askopenfilename(
+        title='環境定義ファイル(env_input.inp)を選択',
+        filetypes=[('PHITS Input', '*.inp'), ('All', '*.*')]
+    )
+    if not env_path:
+        return False, 0 # キャンセルされた
+        
+    try:
+        with open(env_path, 'r', encoding='utf-8', errors='ignore') as f:
+            env_text = f.read()
+    except Exception as e:
+        messagebox.showerror('読込失敗', f'環境定義ファイルの読み込みに失敗: {e}')
+        return False, 0
 
     file_count = 0
     try:
@@ -206,51 +389,45 @@ def generate_detailed_simulation_files(routes, output_dir):
             route_dir = os.path.join(output_dir, f"route_{ri}")
             os.makedirs(route_dir, exist_ok=True)
 
-            detailed = route.get('detailed_path', [])
-            for idx, pt in enumerate(detailed, start=1):
-                # pt は (x, y, z) の中心座標を想定
+            for idx, pt in enumerate(route.get('detailed_path', []), start=1):
                 det_x, det_y, det_z = pt
+                
+                # template.inp内のプレースホルダを実際の値に置換
+                # .format() はキーが存在しないとエラーになるため、安全なreplaceを使用
+                filled_template = template_text
+                replacements = {
+                    '{det_x}': f"{det_x:.3f}",
+                    '{det_y}': f"{det_y:.3f}",
+                    '{det_z}': f"{det_z:.3f}",
+                    '{nuclide_name}': route.get('nuclide', 'Cs-137'),
+                    '{activity_value}': route.get('activity', '1.0E+12'),
+                    '{maxcas_value}': str(route.get('maxcas', 10000)),
+                    '{maxbch_value}': str(route.get('maxbch', 10)),
+                }
+                for key, val in replacements.items():
+                    filled_template = filled_template.replace(key, val)
 
-                # 既存 env をファイルにコピー into route_dir for traceability
-                if env_text:
-                    try:
-                        with open(os.path.join(route_dir, 'env_input.inp'), 'w', encoding='utf-8') as ef:
-                            ef.write(env_text)
-                    except Exception:
-                        pass
+                # ここで新しいマージ処理を呼び出す
+                # (注: AdvancedPhitsMerger の実装が完了するまでは動作しない)
+                # 環境定義(env)を base にして、テンプレート(ポイント毎)を merge する
+                merger = AdvancedPhitsMerger(base_content=env_text, merge_content=filled_template)
+                final_content = merger.merge()
 
-                # テンプレートに値を埋める
-                # route に含まれる核種・放射能を使用（存在しなければテンプレート内の既定を残す）
-                nuclide = route.get('nuclide', 'Cs-137')
-                activity = route.get('activity', '1.0E+12')
-                maxcas = route.get('maxcas', 10000)
-                maxbch = route.get('maxbch', 10)
-
-                filled = template_no_source
-                filled = filled.replace('{det_x}', f"{det_x:.3f}")
-                filled = filled.replace('{det_y}', f"{det_y:.3f}")
-                filled = filled.replace('{det_z}', f"{det_z:.3f}")
-                filled = filled.replace('{nuclide_name}', str(nuclide))
-                filled = filled.replace('{activity_value}', str(activity))
-                filled = filled.replace('{maxcas_value}', str(maxcas))
-                filled = filled.replace('{maxbch_value}', str(maxbch))
-
-                # ソースは env_input.inp に含まれているものを参照する前提なので削除済み
                 out_name = os.path.join(route_dir, f"detailed_point_{idx:03d}.inp")
-                with open(out_name, 'w', encoding='utf-8') as out_f:
-                    # 先頭に env を挿入してからテンプレートを置く
-                    if env_text:
-                        out_f.write(env_text)
-                        out_f.write("\n")
-                    out_f.write(filled)
+                with open(out_name, 'w', encoding='utf-8') as f:
+                    f.write(final_content)
 
                 file_count += 1
 
-        messagebox.showinfo('生成完了', f'{file_count} 件の詳細PHITS入力ファイルを作成しました。')
+        if file_count > 0:
+            messagebox.showinfo('生成完了', f'{file_count}件の詳細入力ファイルを作成しました。')
         return True, file_count
+
     except Exception as e:
-        messagebox.showerror('生成失敗', f'詳細入力ファイルの生成中にエラーが発生しました: {e}')
-        return False, file_count
+        messagebox.showerror('生成失敗', f'詳細入力ファイルの生成中に予期せぬエラーが発生しました: {e}')
+        import traceback
+        traceback.print_exc()
+        return False, 0
 
 def load_and_parse_dose_map():
     """
