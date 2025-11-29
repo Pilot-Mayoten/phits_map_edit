@@ -171,39 +171,27 @@ def generate_environment_input_file(map_data):
 
 class AdvancedPhitsMerger:
     def __init__(self, base_content, merge_content):
-        # 追記するだけのセクションキーを先に定義
-        self.append_only_keys = ['source', 'tdeposit', 'tend']
+        self.append_only_keys = ['source', 'tend']
+        self.overwrite_keys = ['title', 'parameters', 'tdeposit']
+        self.merge_keys = ['material', 'surface', 'cell', 'volume', 'transform']
 
-        # 正規化されたキー -> (元のヘッダ名, [行...]) の辞書
-        self.base_sections = self._parse(base_content, is_base=True)
-        self.merge_sections = self._parse(merge_content, is_base=False)
+        self.base_sections = self._parse(base_content)
+        self.merge_sections = self._parse(merge_content)
         
-        # ID -> ID のマッピング
-        self.id_maps = {
-            'mat': {},   # Material
-            'cell': {},  # Cell
-            'surf': {},  # Surface
-            'trans': {}  # Transform
-        }
+        self.id_maps = {'mat': {}, 'cell': {}, 'surf': {}, 'trans': {}}
 
-    def _parse(self, text, is_base):
+    def _parse(self, text):
         sections = {}
         header_pattern = re.compile(r'^\s*\[\s*([^\]]+?)\s*\]', re.IGNORECASE)
-        current_key = None
-        current_header = None
+        current_key, current_header = None, None
         
-        lines = text.splitlines()
-        for i, line in enumerate(lines):
+        for i, line in enumerate(text.splitlines()):
             match = header_pattern.match(line)
             if match:
                 header_text = match.group(0).strip()
-                header_name = match.group(1)
-                key = re.sub(r'[^a-zA-Z0-9]', '', header_name).lower()
-
-                # 複数ありうるセクション (sourceなど) は一意なキーを持たせる
+                key = re.sub(r'[^a-zA-Z0-9]', '', match.group(1)).lower()
                 if key in self.append_only_keys:
                     key = f"{key}_{i}"
-
                 if key not in sections:
                     sections[key] = (header_text, [])
                 current_key = key
@@ -212,7 +200,6 @@ class AdvancedPhitsMerger:
         return sections
 
     def merge(self):
-        """マージ処理のメイン関数"""
         self._renumber_and_map_ids()
         self._update_references()
         return self._render_output()
@@ -228,12 +215,7 @@ class AdvancedPhitsMerger:
 
         for id_type, pattern in id_patterns.items():
             key = section_keys[id_type]
-            base_ids = set()
-            if key in self.base_sections:
-                for line in self.base_sections[key][1]:
-                    match = pattern.match(line)
-                    if match:
-                        base_ids.add(int(match.group(1)))
+            base_ids = {int(m.group(1)) for sec_key, (_, lines) in self.base_sections.items() if sec_key.startswith(key) for line in lines for m in [pattern.match(line)] if m}
             
             max_base_id = max(base_ids) if base_ids else 0
             next_id = max_base_id + 1
@@ -247,75 +229,59 @@ class AdvancedPhitsMerger:
                         continue
                     
                     old_id = int(match.group(1))
+                    new_id = old_id
                     if old_id in base_ids:
                         new_id = next_id
-                        self.id_maps[id_type][old_id] = new_id
-                        
-                        if id_type == 'mat':
-                            new_id_str = f"mat[{new_id}]"
-                            # mat[1] H 2... -> mat[101] H 2...
-                            line_parts = line.split()
-                            line_parts[0] = new_id_str
-                            line = "   " + " ".join(line_parts)
-                        elif id_type == 'trans':
-                            line = pattern.sub(f"*Tr{new_id}", line, 1)
-                        else:
-                            new_id_str = str(new_id)
-                            line = pattern.sub(f"{new_id_str} ", line, 1)
-
                         next_id += 1
+                    
+                    self.id_maps[id_type][old_id] = new_id
+                    
+                    if id_type == 'mat':
+                        line = pattern.sub(f"mat[{new_id}]", line, 1)
+                    elif id_type == 'trans':
+                        line = pattern.sub(f"*Tr{new_id}", line, 1)
+                    else:
+                        line = pattern.sub(f"{new_id} ", line, 1)
                     new_lines.append(line)
                 self.merge_sections[key] = (self.merge_sections[key][0], new_lines)
 
     def _update_references(self):
-        if 'cell' not in self.merge_sections:
-            return
+        if 'cell' not in self.merge_sections: return
 
         new_cell_lines = []
-        # セル行から cell_id, mat_id, density を取得
         cell_line_pattern = re.compile(r'^\s*(\d+)\s+(-?\d+)\s+([^ ]+)\s+(.*)', re.IGNORECASE)
 
         for line in self.merge_sections['cell'][1]:
-            # コメントや不正な行はそのまま
-            if not cell_line_pattern.match(line):
+            match = cell_line_pattern.match(line)
+            if not match:
                 new_cell_lines.append(line)
                 continue
 
-            # 1. Material IDの参照更新
-            mat_id_match = re.search(r'^\s*\d+\s+(-?\d+)', line)
-            if mat_id_match:
-                mat_id = int(mat_id_match.group(1))
-                abs_mat_id = abs(mat_id)
-                if abs_mat_id in self.id_maps['mat']:
-                    new_mat_id = self.id_maps['mat'][abs_mat_id]
-                    # 符号を維持して置換
-                    line = re.sub(str(mat_id), f'{"-" if mat_id < 0 else ""}{new_mat_id}', line, 1)
-
-            # 2. Surface ID と Transform ID の参照更新
-            rest_of_line = cell_line_pattern.match(line).group(4)
+            cell_id_str, mat_id_str, density, rest_of_line = match.groups()
+            mat_id = int(mat_id_str)
             
-            # Surface参照 ([+\-#]?\d+)
+            # Material IDの参照更新
+            if abs(mat_id) in self.id_maps['mat']:
+                new_mat_id = self.id_maps['mat'][abs(mat_id)]
+                mat_id_str = f'{"-" if mat_id < 0 else ""}{new_mat_id}'
+
+            # Surface IDの参照更新
             def replace_surf(m):
-                full_match, prefix, old_id_str = m.groups()
+                prefix, old_id_str = m.group(1), m.group(2)
                 old_id = int(old_id_str)
                 new_id = self.id_maps['surf'].get(old_id, old_id)
                 return f"{prefix}{new_id}"
-            
-            rest_of_line = re.sub(r'(([+\-#])(\d+))', replace_surf, rest_of_line)
-            
-            # Transform参照 (trcl\s*=\s*\(\s*\d+\s*\))
+            rest_of_line = re.sub(r'([+\-#])(\d+)', replace_surf, rest_of_line)
+
+            # Transform IDの参照更新
             def replace_trans(m):
                 prefix, old_id_str, suffix = m.groups()
                 old_id = int(old_id_str)
                 new_id = self.id_maps['trans'].get(old_id, old_id)
                 return f"{prefix}{new_id}{suffix}"
+            rest_of_line = re.sub(r'(trcl\s*=\s*\(?\s*)(\d+)(\s*\)?)', replace_trans, rest_of_line, flags=re.IGNORECASE)
 
-            rest_of_line = re.sub(r'(trcl\s*=\s*\(\s*)(\d+)(\s*\))', replace_trans, rest_of_line, flags=re.IGNORECASE)
-
-            # 更新した行を再構築
-            parts = cell_line_pattern.match(line)
-            updated_line = f"  {parts.group(1)} {parts.group(2)} {parts.group(3)} {rest_of_line}"
-            new_cell_lines.append(updated_line)
+            new_cell_lines.append(f"  {cell_id_str} {mat_id_str} {density} {rest_of_line}")
         
         self.merge_sections['cell'] = (self.merge_sections['cell'][0], new_cell_lines)
 
@@ -323,35 +289,35 @@ class AdvancedPhitsMerger:
         final_sections = self.base_sections.copy()
 
         for key, (header, lines) in self.merge_sections.items():
-            # append_only_keys のいずれかで始まるキーはそのまま追加（source_*, tdeposit_* 等）
-            if any(key.startswith(k) for k in self.append_only_keys) or key in self.append_only_keys:
+            if any(key.startswith(k) for k in self.append_only_keys):
                 final_sections[key] = (header, lines)
-            elif key in final_sections:
-                # 既存セクションに重複を排除して追記
-                base_header, base_lines = final_sections[key]
-                existing_lines_stripped = {l.strip() for l in base_lines if l.strip()}
-                
-                for line in lines:
-                    if line.strip() and line.strip() not in existing_lines_stripped:
-                        base_lines.append(line)
-            else:
-                # 新しいセクションとして追加
+            elif key in self.overwrite_keys:
+                final_sections[key] = (header, lines)
+            elif key in self.merge_keys:
+                if key == 'cell':
+                    # セルの場合は、マージ(テンプレート)側を先に書き込むことで優先させる
+                    if key in final_sections:
+                        final_sections[key][1][:] = lines + final_sections[key][1]
+                    else:
+                        final_sections[key] = (header, lines)
+                elif key in final_sections:
+                    final_sections[key][1].extend(lines)
+                else:
+                    final_sections[key] = (header, lines)
+            elif key not in final_sections:
                 final_sections[key] = (header, lines)
 
-        # PHITSの標準的なセクション順序
-        order = ['title', 'parameters', 'material', 'surface', 'cell', 'transform', 'source', 'tdeposit', 'tend']
-        
+        order = ['title', 'parameters', 'material', 'surface', 'cell', 'volume', 'transform', 'source', 'tdeposit', 'tend']
         output_lines = []
         written_keys = set()
 
         for key_prefix in order:
-            # source_0, source_1 などを順に処理
             keys_to_write = sorted([k for k in final_sections if k.startswith(key_prefix)])
             for key in keys_to_write:
                 if key not in written_keys:
                     header, lines = final_sections[key]
                     output_lines.append(header)
-                    output_lines.extend(l for l in lines if l.strip()) # 空行を除外して追加
+                    output_lines.extend(l for l in lines if l.strip())
                     output_lines.append('')
                     written_keys.add(key)
         
@@ -383,17 +349,35 @@ def generate_detailed_simulation_files(routes, output_dir):
         messagebox.showerror('読込失敗', f'環境定義ファイルの読み込みに失敗: {e}')
         return False, 0
 
+    # --- 検出器のセルIDを動的に決定 ---
+    # 環境ファイル内の最大のセルIDを探す
+    cell_id_pattern = re.compile(r'^\s*(\d+)\s+\d+')
+    max_env_cell_id = 0
+    for line in env_text.splitlines():
+        # コメント行は除外
+        if line.strip().startswith('$'):
+            continue
+        match = cell_id_pattern.match(line)
+        if match:
+            max_env_cell_id = max(max_env_cell_id, int(match.group(1)))
+    
+    # 衝突しないように、十分大きなIDを開始点とするのも良い
+    # ここでは単純に最大値+1とする
+    detector_cell_id_start = max_env_cell_id + 1
+    # --- ID決定ここまで ---
+
     file_count = 0
     try:
         for ri, route in enumerate(routes, start=1):
             route_dir = os.path.join(output_dir, f"route_{ri}")
             os.makedirs(route_dir, exist_ok=True)
 
+            # この経路で使用する検出器IDを決定（基本は同じだが、将来的な拡張のため）
+            detector_cell_id = detector_cell_id_start 
+
             for idx, pt in enumerate(route.get('detailed_path', []), start=1):
                 det_x, det_y, det_z = pt
                 
-                # template.inp内のプレースホルダを実際の値に置換
-                # .format() はキーが存在しないとエラーになるため、安全なreplaceを使用
                 filled_template = template_text
                 replacements = {
                     '{det_x}': f"{det_x:.3f}",
@@ -403,13 +387,11 @@ def generate_detailed_simulation_files(routes, output_dir):
                     '{activity_value}': route.get('activity', '1.0E+12'),
                     '{maxcas_value}': str(route.get('maxcas', 10000)),
                     '{maxbch_value}': str(route.get('maxbch', 10)),
+                    '{detector_cell_id}': str(detector_cell_id), # 動的に決定したIDを適用
                 }
                 for key, val in replacements.items():
                     filled_template = filled_template.replace(key, val)
 
-                # ここで新しいマージ処理を呼び出す
-                # (注: AdvancedPhitsMerger の実装が完了するまでは動作しない)
-                # 環境定義(env)を base にして、テンプレート(ポイント毎)を merge する
                 merger = AdvancedPhitsMerger(base_content=env_text, merge_content=filled_template)
                 final_content = merger.merge()
 
@@ -544,3 +526,83 @@ def load_and_parse_dose_map():
     except Exception as e:
         messagebox.showerror("読み込みエラー", f"{e}")
         return None
+
+def execute_phits_simulation(inp_path, phits_command="phits.bat"):
+    """
+    指定された.inpファイルでPHITSシミュレーションを実行する。
+    1021.pyを参考に、より堅牢な実行方法を採用。
+    """
+    base_name = os.path.splitext(os.path.basename(inp_path))[0]
+    run_dir = os.path.join(os.path.dirname(inp_path), f"run_{base_name}")
+    
+    try:
+        os.makedirs(run_dir, exist_ok=True)
+        shutil.copy(inp_path, os.path.join(run_dir, "input.inp"))
+
+        # コマンドをリスト形式で準備（より安全）
+        # shell=Falseで実行するため、cdは使えない。cwdでディレクトリを指定する。
+        command_parts = [phits_command, "input.inp"]
+
+        process = subprocess.Popen(
+            command_parts,
+            cwd=run_dir,  # 実行ディレクトリを指定
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            errors='ignore'
+        )
+        stdout, stderr = process.communicate(timeout=600)
+
+        # ログにすべての出力を記録
+        log_message = (
+            f"--- PHITS Log for {base_name} ---\n"
+            f"Return Code: {process.returncode}\n"
+            f"[STDOUT]:\n{stdout}\n"
+            f"[STDERR]:\n{stderr}\n"
+            f"--- End Log ---\n"
+        )
+        
+        # 結果ファイルの存在確認
+        deposit_path = os.path.join(run_dir, "deposit.out")
+        if not os.path.exists(deposit_path):
+            error_message = f"PHITSは終了しましたが、deposit.outが生成されませんでした。\n{log_message}"
+            return False, error_message
+
+        # returncodeが0でなくても、deposit.outがあれば成功とみなす場合もあるが、
+        # ここでは厳密にチェックする。
+        if process.returncode != 0:
+            error_message = f"PHITS実行エラー (code: {process.returncode})。\n{log_message}"
+            return False, error_message
+        
+        # 成功時もログは返す（呼び出し元で表示するため）
+        return True, (run_dir, log_message)
+
+    except FileNotFoundError:
+        return False, f"コマンド '{phits_command}' が見つかりません。フルパスで指定するか、環境変数PATHを確認してください。"
+    except subprocess.TimeoutExpired:
+        return False, f"PHITS実行がタイムアウトしました ({base_name})"
+    except Exception as e:
+        return False, f"PHITS実行中に予期せぬエラーが発生しました ({base_name}): {e}"
+
+def extract_dose_from_deposit(run_dir):
+    """
+    実行ディレクトリ内の deposit.out から線量を取得する。
+    """
+    deposit_path = os.path.join(run_dir, "deposit.out")
+    if not os.path.exists(deposit_path):
+        return None, f"deposit.outが見つかりません: {run_dir}"
+
+    try:
+        with open(deposit_path, "r", encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                # regメッシュの場合、"sum over"を含む行から値を取得
+                if "sum over" in line:
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        return float(parts[-2]), None # 線量値を返す
+        return None, "deposit.out内に線量情報が見つかりません。"
+    except (ValueError, IndexError) as e:
+        return None, f"線量のパースに失敗: {e}"
+    except Exception as e:
+        return None, f"deposit.outの読み込みエラー: {e}"

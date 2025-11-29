@@ -6,7 +6,7 @@
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 
 class SimulationControlsView(tk.Frame):
     def __init__(self, master, callbacks):
@@ -47,7 +47,7 @@ class SimulationControlsView(tk.Frame):
         
         # --- 下部：ログ表示 ---
         log_frame = self._create_log_display_panel(main_paned)
-        main_paned.add(log_frame, weight=1)
+        main_paned.add(log_frame, weight=2) # weightを増やして高さを確保
 
     def _create_route_definition_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路定義", padding=10)
@@ -58,7 +58,6 @@ class SimulationControlsView(tk.Frame):
         labels = {
             "nuclide": "核種",
             "activity": "放射能 (Bq)",
-            "step": "評価ステップ幅 (cm)"
         }
 
         for i, (key, text) in enumerate(labels.items()):
@@ -67,14 +66,23 @@ class SimulationControlsView(tk.Frame):
             entry.grid(row=i, column=1, columnspan=3, sticky="we", padx=5, pady=2)
             self.entries[key] = entry
 
+        # PHITS実行コマンドの入力欄を追加
+        phits_cmd_frame = ttk.Frame(frame)
+        phits_cmd_frame.grid(row=i + 1, column=0, columnspan=4, sticky="we", pady=2)
+        ttk.Label(phits_cmd_frame, text="PHITS実行ファイル").pack(side=tk.LEFT, padx=5)
+        self.phits_command_entry = ttk.Entry(phits_cmd_frame)
+        self.phits_command_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.phits_command_entry.insert(0, "phits.bat") # デフォルト値
+        ttk.Button(phits_cmd_frame, text="参照...", 
+                   command=lambda: self.callbacks.get("select_phits_command", lambda: None)()).pack(side=tk.LEFT, padx=5)
+
         # デフォルト値
         self.entries["nuclide"].insert(0, "Cs-137")
         self.entries["activity"].insert(0, "1.0E+12")
-        self.entries["step"].insert(0, "50.0")
 
         # --- アクションボタン ---
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=len(labels), column=0, columnspan=4, pady=10)
+        button_frame.grid(row=i + 2, column=0, columnspan=4, pady=10)
         ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
 
         return frame
@@ -82,7 +90,7 @@ class SimulationControlsView(tk.Frame):
     def _create_route_list_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路リスト", padding=10)
         
-        cols = ("#", "核種", "放射能", "ステップ幅")
+        cols = ("#", "核種", "放射能", "ステップ幅(cm)")
         self.tree = ttk.Treeview(frame, columns=cols, show="headings")
         for col in cols:
             self.tree.heading(col, text=col)
@@ -90,7 +98,7 @@ class SimulationControlsView(tk.Frame):
         self.tree.column("#", width=30, anchor=tk.CENTER)
         self.tree.column("核種", width=120)
         self.tree.column("放射能", width=120)
-        self.tree.column("ステップ幅", width=80, anchor=tk.E)
+        self.tree.column("ステップ幅(cm)", width=100, anchor=tk.E)
 
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
@@ -118,7 +126,16 @@ class SimulationControlsView(tk.Frame):
         ttk.Button(run_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"]).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(run_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None)).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(run_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"]).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(run_frame, text="4. 経路上の詳細線量評価", command=self.callbacks["run_detailed_simulation"]).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(run_frame, text="4. 経路上の詳細線量評価", 
+                   command=self.callbacks["run_detailed_simulation"]).pack(fill=tk.X, pady=3)
+        ttk.Button(run_frame, text="5. PHITS実行と結果プロット", 
+                   command=self.callbacks["run_phits_and_plot"]).pack(fill=tk.X, pady=3)
+        
+        # --- デバッグ用フレーム ---
+        debug_frame = ttk.Frame(frame)
+        debug_frame.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(debug_frame, text="デバッグ用バッチファイル生成", 
+                   command=self.callbacks.get("generate_debug_batch")).pack(side=tk.LEFT, padx=5)
         
         # --- 可視化フレーム ---
         vis_frame = ttk.Frame(frame)
@@ -129,11 +146,9 @@ class SimulationControlsView(tk.Frame):
 
     def _create_log_display_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="ログ", padding=10)
-        self.log_text = tk.Text(frame, height=10, state='disabled', wrap='word', bg='#f0f0f0')
-        log_scroll = ttk.Scrollbar(frame, command=self.log_text.yview)
-        self.log_text.config(yscrollcommand=log_scroll.set)
-        log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # tk.Textからscrolledtext.ScrolledTextに変更
+        self.log_text = scrolledtext.ScrolledText(frame, height=10, state='disabled', wrap='word', bg='#f0f0f0')
+        self.log_text.pack(fill=tk.BOTH, expand=True)
         return frame
 
     def get_route_definition_data(self):
@@ -142,7 +157,6 @@ class SimulationControlsView(tk.Frame):
             data = {
                 "nuclide": self.entries["nuclide"].get(),
                 "activity": self.entries["activity"].get(),
-                "step": float(self.entries["step"].get())
             }
             # 簡単なバリデーション
             if not data["nuclide"] or not data["activity"]:
@@ -153,15 +167,27 @@ class SimulationControlsView(tk.Frame):
             messagebox.showerror("入力エラー", f"無効な入力値があります: {e}")
             return None
 
+    def get_phits_command(self):
+        """PHITS実行コマンド入力欄から値を取得する"""
+        return self.phits_command_entry.get()
+
+    def set_phits_command(self, path):
+        """PHITS実行コマンド入力欄に値を設定する"""
+        self.phits_command_entry.delete(0, tk.END)
+        self.phits_command_entry.insert(0, path)
+
     def update_route_tree(self, routes):
         """指定された経路リストでTreeviewを更新する"""
         self.tree.delete(*self.tree.get_children())
         for i, r in enumerate(routes):
+            # a_star_pathがあればステップ数を表示、なければステップ幅を表示
+            step_info = f"{len(r['a_star_path'])} pts" if 'a_star_path' in r else r.get('step_width', 'N/A')
+
             values = (
                 i + 1,
                 r.get('nuclide', 'N/A'),
                 r.get('activity', 'N/A'),
-                r.get('step', 'N/A'),
+                step_info,
             )
             self.tree.insert("", "end", values=values)
     
@@ -176,6 +202,6 @@ class SimulationControlsView(tk.Frame):
     def log(self, message):
         """ログウィジェットにメッセージを追記する"""
         self.log_text.config(state='normal')
-        self.log_text.insert(tk.END, message + '\\n')
+        self.log_text.insert(tk.END, message + '\n') # 改行コードを '\\n' から '\n' に修正
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)

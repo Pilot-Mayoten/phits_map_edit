@@ -150,3 +150,61 @@ def compute_detailed_path_points(start_phys, mid_phys, end_phys, step_cm):
         path_points.append(end_phys)
         
     return path_points
+
+def resample_path_by_width(physical_path, step_width):
+    """
+    物理座標の経路を指定されたステップ幅で再サミングする。
+    経路の点と点の間に、指定されたステップ幅で内挿点を計算する。
+    """
+    if not physical_path or len(physical_path) < 2 or step_width <= 0:
+        return physical_path
+
+    new_path = [physical_path[0]]
+    
+    # 経路の全長を計算
+    total_distance = 0
+    for i in range(len(physical_path) - 1):
+        total_distance += _distance(physical_path[i], physical_path[i+1])
+
+    # サンプル点を置くべき距離を計算
+    distances_to_sample = []
+    d = step_width
+    while d < total_distance:
+        distances_to_sample.append(d)
+        d += step_width
+
+    if not distances_to_sample:
+        # ステップ幅より経路が短い場合は、中間点を追加するだけでも良い
+        if total_distance > 0:
+             new_path.append(physical_path[-1])
+        return list(dict.fromkeys(new_path)) # 重複削除
+
+    segment_start_dist = 0
+    sample_idx = 0
+    
+    for i in range(len(physical_path) - 1):
+        p1 = physical_path[i]
+        p2 = physical_path[i+1]
+        segment_len = _distance(p1, p2)
+        segment_end_dist = segment_start_dist + segment_len
+
+        if segment_len == 0:
+            continue
+
+        while sample_idx < len(distances_to_sample) and \
+              segment_start_dist <= distances_to_sample[sample_idx] < segment_end_dist:
+            
+            dist_from_p1 = distances_to_sample[sample_idx] - segment_start_dist
+            ratio = dist_from_p1 / segment_len
+            interpolated_point = _interpolate_point(p1, p2, ratio)
+            new_path.append(interpolated_point)
+            sample_idx += 1
+            
+        segment_start_dist = segment_end_dist
+
+    # 最後の点を必ず追加
+    new_path.append(physical_path[-1])
+    
+    # 重複を削除して返す
+    return list(dict.fromkeys(new_path))
+

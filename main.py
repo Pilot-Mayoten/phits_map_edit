@@ -1,4 +1,4 @@
-"""
+﻿"""
 PHITS Map Editor and Simulation Runner
 ======================================
 This application serves as the main entry point and controller for the GUI.
@@ -7,6 +7,10 @@ This application serves as the main entry point and controller for the GUI.
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.simpledialog as simpledialog
+import os
+import threading
+from queue import Queue, Empty
+from tkinter import scrolledtext
 
 # --- アプリケーションのコアモジュール ---
 from app_config import MAP_ROWS, MAP_COLS, CELL_TYPES
@@ -14,13 +18,24 @@ from map_editor_view import MapEditorView
 from simulation_controls_view import SimulationControlsView
 from phits_handler import (generate_environment_input_file, 
                            load_and_parse_dose_map, 
-                           generate_detailed_simulation_files)
-from route_calculator import find_optimal_route, compute_detailed_path_points
+                           generate_detailed_simulation_files,
+                           execute_phits_simulation,
+                           extract_dose_from_deposit)
+from route_calculator import find_optimal_route, compute_detailed_path_points, resample_path_by_width
 from utils import get_physical_coords
 import visualizer
 
+# ★デバッグ用のフラグ
+_app_instance_count = 0
+
 class MainApplication(tk.Tk):
     def __init__(self):
+        global _app_instance_count
+        _app_instance_count += 1
+        print(f"--- MainApplication instance created. Count: {_app_instance_count} ---")
+        if _app_instance_count > 1:
+            messagebox.showwarning("多重起動警告", "MainApplicationのインスタンスが複数作成されました。予期せぬ動作の原因となります。")
+
         super().__init__()
         self.title("🗺️ PHITS Map Editor & Route Planner")
         self.geometry("1600x900") # Windowサイズを少し拡大
@@ -30,6 +45,8 @@ class MainApplication(tk.Tk):
                          for _ in range(MAP_ROWS)]
         self.dose_map = None
         self.routes = [] # 複数の経路情報を管理するリスト
+        self.log_queue = Queue()
+        self.result_queue = Queue() # ★結果受け渡し用のキューを追加
 
         # --- 2. メインレイアウトの作成 ---
         main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
@@ -49,6 +66,9 @@ class MainApplication(tk.Tk):
             "add_route": self.add_route,
             "delete_route": self.delete_route,
             "visualize_routes": self.visualize_routes,
+            "run_phits_and_plot": self.run_phits_and_plot_threaded,
+            "generate_debug_batch": self.generate_debug_batch_file,
+            "select_phits_command": self.select_phits_executable, # ★追加
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
         main_paned.add(self.sim_controls_view, width=800)
@@ -57,6 +77,46 @@ class MainApplication(tk.Tk):
         self.status_var = tk.StringVar(value="準備完了")
         status_bar = tk.Label(self, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.after(100, self.process_log_queue)
+        self.after(200, self.process_result_queue) # ★結果処理ループを開始
+
+    def process_result_queue(self):
+        """結果キューを処理して、メインスレッドでGUI操作（プロットやダイアログ）を実行"""
+        try:
+            result = self.result_queue.get_nowait()
+            if isinstance(result, dict): # 正常な結果
+                if not result:
+                     self.log("プロットできる有効な結果がありませんでした。")
+                     messagebox.showinfo("完了", "処理が完了しましたが、プロットできる有効なデータがありませんでした。")
+                else:
+                    self.log("全経路の処理が完了しました。結果をプロットします。")
+                    visualizer.plot_dose_profile(result)
+                    messagebox.showinfo("成功", "PHITSの一括実行と結果のプロットが完了しました。")
+            elif isinstance(result, str): # エラーメッセージ
+                self.log(f"処理中にエラーが発生しました: {result}")
+                messagebox.showerror("処理エラー", result)
+
+        except Empty:
+            pass # キューが空なら何もしない
+        finally:
+            self.after(200, self.process_result_queue) # 次のチェックを予約
+
+    def process_log_queue(self):
+        """ログメッセージキューを処理して、表示を更新"""
+        try:
+            while True:
+                message = self.log_queue.get_nowait()
+                print(message) # コンソールにも出力
+                # ステータスバーにログメッセージを表示
+                current_text = self.status_var.get()
+                new_text = f"{current_text}\n{message}" if current_text else message
+                self.status_var.set(new_text)
+
+        except Empty:
+            pass # キューが空なら何もしない
+        finally:
+            self.after(100, self.process_log_queue)
 
     # ==========================================================================
     #  コールバック関数 (Viewからのイベントを処理)
@@ -89,14 +149,12 @@ class MainApplication(tk.Tk):
             self.log("経路情報の取得に失敗しました。処理を中断します。")
             return
 
-        # 経路に必要なスタート・ゴール・中継点をマップから取得
         start, goal, middle = self.find_special_points()
         if not start or not goal:
             messagebox.showwarning("設定エラー", "マップ上に「スタート」と「ゴール」を配置してください。")
             self.log("エラー: 経路追加にはスタートとゴールが必須です。")
             return
         
-        # 取得した情報をすべて結合して一つの経路データにする
         route_data["start"] = start
         route_data["goal"] = goal
         route_data["middle"] = middle
@@ -112,11 +170,10 @@ class MainApplication(tk.Tk):
             messagebox.showinfo("情報", "削除する経路が選択されていません。")
             return
 
-        # 確認ダイアログ
         if not messagebox.askyesno("確認", f"{len(indices)}件の経路を削除しますか？"):
             return
 
-        for index in indices: # indicesは逆順ソート済み
+        for index in sorted(indices, reverse=True):
             if 0 <= index < len(self.routes):
                 del self.routes[index]
         
@@ -144,15 +201,13 @@ class MainApplication(tk.Tk):
             self.log("線量マップの読み込みがキャンセルされたか、失敗しました。")
 
     def calculate_optimal_route(self):
-        """A*で最適経路を探索し、選択中の経路に適用する"""
+        """A*で最適経路を探索し、ステップ幅でリサンプリングして経路に適用する"""
         self.log("最適経路の探索を開始します...")
 
-        # 1. 探索対象のルートを選択
         selected_indices = self.sim_controls_view.get_selected_route_indices()
         if not selected_indices:
             messagebox.showwarning("設定エラー", "「最適経路を探索」を適用する経路をリストから選択してください。")
             return
-        # 複数選択は許可しない
         if len(selected_indices) > 1:
             messagebox.showwarning("設定エラー", "経路は1つだけ選択してください。")
             return
@@ -160,7 +215,6 @@ class MainApplication(tk.Tk):
         route_index = selected_indices[0]
         target_route = self.routes[route_index]
 
-        # 2. 経路計算に必要な情報を取得
         start_grid = target_route.get("start")
         goal_grid = target_route.get("goal")
         middle_grid = target_route.get("middle")
@@ -169,22 +223,38 @@ class MainApplication(tk.Tk):
             messagebox.showwarning("設定エラー", "選択された経路に「スタート」と「ゴール」が設定されていません。")
             return
 
-        # 3. 重み係数を取得
         weight_str = simpledialog.askstring("設定", "被ばく回避の重み係数:", initialvalue="10000")
         try:
             weight = float(weight_str)
         except (ValueError, TypeError):
-            weight = 0.0
+            return
 
-        # 4. A*探索を実行
-        path = find_optimal_route(start_grid, goal_grid, middle_grid, self.map_data, self.dose_map, weight)
+        a_star_grid_path = find_optimal_route(start_grid, goal_grid, middle_grid, self.map_data, self.dose_map, weight)
         
-        if path:
-            # 5. 見つかった経路(グリッド座標)をルート情報に保存
-            target_route["a_star_path"] = path
-            self.map_editor_view.visualize_path(path, self.map_data)
-            self.log(f"最適経路を発見 (ステップ数: {len(path)})。経路 {route_index + 1} に適用しました。")
-            # Treeviewの表示を更新 (A* Path適用済みなどを表示するため)
+        if a_star_grid_path:
+            self.log(f"最適経路を発見 (グリッド数: {len(a_star_grid_path)})。")
+            
+            step_width_str = simpledialog.askstring("設定", "評価点のステップ幅 (cm):", initialvalue="10.0")
+            try:
+                step_width = float(step_width_str)
+                if step_width <= 0: raise ValueError()
+            except (ValueError, TypeError):
+                self.log("無効なステップ幅が入力されたため、処理を中断します。")
+                return
+
+            physical_path = []
+            for r, c in a_star_grid_path:
+                coords = get_physical_coords(r, c)
+                center = ((coords[0] + coords[1]) / 2, (coords[2] + coords[3]) / 2, (coords[4] + coords[5]) / 2)
+                physical_path.append(center)
+            
+            detailed_path = resample_path_by_width(physical_path, step_width)
+            
+            target_route["step_width"] = step_width
+            target_route["detailed_path"] = detailed_path
+            
+            self.map_editor_view.visualize_path(a_star_grid_path, self.map_data)
+            self.log(f"ステップ幅 {step_width}cm で経路を再生成 ({len(detailed_path)}点)。経路 {route_index + 1} に適用しました。")
             self.sim_controls_view.update_route_tree(self.routes)
         else:
             messagebox.showerror("探索失敗", "経路が見つかりませんでした。")
@@ -196,57 +266,25 @@ class MainApplication(tk.Tk):
         
         if not self.routes:
             messagebox.showinfo("情報", "評価対象の経路がありません。")
-            self.log("経路が未定義のため、詳細評価を中止しました。")
             return
+
+        for i, route in enumerate(self.routes):
+            if "detailed_path" not in route:
+                messagebox.showwarning("経路未生成", f"経路 {i+1} の詳細経路が生成されていません。\n先に「3. 最適経路を探索」を実行してください。")
+                return
 
         output_dir = filedialog.askdirectory(title="シミュレーション結果の保存先を選択")
         if not output_dir:
-            self.log("出力先フォルダが選択されなかったため、処理を中断しました。")
             return
             
         self.log(f"出力先フォルダ: {output_dir}")
 
-        # 各経路について、詳細な評価点群を計算
-        for route in self.routes:
-            # A*経路が保存されていればそれを使う
-            if "a_star_path" in route and route["a_star_path"]:
-                self.log(f"経路 {self.routes.index(route)+1} はA*経路を使用します。")
-                # グリッド座標のリストを物理座標(中心点)のリストに変換
-                path_phys = []
-                for r, c in route["a_star_path"]:
-                    phys_coords = get_physical_coords(r, c)
-                    center = ((phys_coords[0] + phys_coords[1]) / 2,
-                              (phys_coords[2] + phys_coords[3]) / 2,
-                              (phys_coords[4] + phys_coords[5]) / 2)
-                    path_phys.append(center)
-                route["detailed_path"] = path_phys
-            else:
-                # A*経路がない場合は、従来通り直線で結ぶ
-                self.log(f"経路 {self.routes.index(route)+1} は直線経路を使用します。")
-                start_phys = get_physical_coords(*route["start"])
-                goal_phys = get_physical_coords(*route["goal"])
-                middle_phys = get_physical_coords(*route["middle"]) if route["middle"] else None
-                
-                # 物理座標系の中心点を計算
-                start_center = ((start_phys[0]+start_phys[1])/2, (start_phys[2]+start_phys[3])/2, (start_phys[4]+start_phys[5])/2)
-                goal_center = ((goal_phys[0]+goal_phys[1])/2, (goal_phys[2]+goal_phys[3])/2, (goal_phys[4]+goal_phys[5])/2)
-                middle_center = ((middle_phys[0]+middle_phys[1])/2, (middle_phys[2]+middle_phys[3])/2, (middle_phys[4]+middle_phys[5])/2) if middle_phys else None
-
-                route["detailed_path"] = compute_detailed_path_points(
-                    start_center, middle_center, goal_center, route["step"]
-                )
-
-            self.log(f"経路{self.routes.index(route)+1}の評価点({len(route['detailed_path'])}点)を計算しました。")
-
-        # PHITSハンドラにファイル生成を依頼
         success, file_count = generate_detailed_simulation_files(self.routes, output_dir)
         
         if success:
             self.log(f"合計{file_count}個のPHITS入力ファイルを生成しました。")
-            messagebox.showinfo("生成完了", f"PHITS入力ファイルの生成が完了しました。\\n場所: {output_dir}")
         else:
             self.log("PHITS入力ファイルの生成に失敗しました。")
-            messagebox.showerror("生成失敗", "PHITS入力ファイルの生成に失敗しました。詳細はログを確認してください。")
 
     def visualize_routes(self):
         """登録された経路を2Dで可視化する"""
@@ -255,34 +293,9 @@ class MainApplication(tk.Tk):
             messagebox.showinfo("情報", "表示する経路がありません。")
             return
         
-        # 評価点が未計算の経路があれば計算する
-        for route in self.routes:
-            if "detailed_path" not in route:
-                self.log(f"経路{self.routes.index(route)+1}の評価点が未計算のため、計算します。")
-                # A*経路が保存されていればそれを使う
-                if "a_star_path" in route and route["a_star_path"]:
-                    path_phys = []
-                    for r, c in route["a_star_path"]:
-                        phys_coords = get_physical_coords(r, c)
-                        center = ((phys_coords[0] + phys_coords[1]) / 2,
-                                  (phys_coords[2] + phys_coords[3]) / 2,
-                                  (phys_coords[4] + phys_coords[5]) / 2)
-                        path_phys.append(center)
-                    route["detailed_path"] = path_phys
-                else:
-                    # A*経路がない場合は、従来通り直線で結ぶ
-                    start_phys = get_physical_coords(*route["start"])
-                    goal_phys = get_physical_coords(*route["goal"])
-                    middle_phys = get_physical_coords(*route["middle"]) if route["middle"] else None
-                    
-                    start_center = ((start_phys[0]+start_phys[1])/2, (start_phys[2]+start_phys[3])/2, (start_phys[4]+start_phys[5])/2)
-                    goal_center = ((goal_phys[0]+goal_phys[1])/2, (goal_phys[2]+goal_phys[3])/2, (goal_phys[4]+goal_phys[5])/2)
-                    middle_center = ((middle_phys[0]+middle_phys[1])/2, (middle_phys[2]+middle_phys[3])/2, (middle_phys[4]+middle_phys[5])/2) if middle_phys else None
+        if any("detailed_path" not in r for r in self.routes):
+             messagebox.showinfo("情報", "詳細経路が未生成の経路は表示されません。\n「3. 最適経路を探索」を実行してください。")
 
-                    route["detailed_path"] = compute_detailed_path_points(
-                        start_center, middle_center, goal_center, route["step"]
-                    )
-        
         sources = self.find_source_points()
         visualizer.visualize_routes_2d(self.routes, sources)
         self.log("2D可視化ウィンドウを表示しました。")
@@ -323,10 +336,213 @@ class MainApplication(tk.Tk):
         return sources
 
     def log(self, message):
+        """ログメッセージをコンソールに出力し、GUI更新のためにキューに入れる"""
         print(message)
-        self.sim_controls_view.log(message)
+        self.log_queue.put(message)
 
+    def run_phits_and_plot_worker(self):
+        """
+        「4. 詳細線量評価」で生成済みの入力ファイル群を元に、PHITSを実行し、結果をプロットする。
+        """
+        self.log("PHITS一括実行と結果プロット処理を開始します...")
+
+        phits_command = self.sim_controls_view.get_phits_command()
+        if not phits_command:
+            self.result_queue.put("PHITS実行コマンドが設定されていません。")
+            return
+
+        # 1. 複数の `route_*` フォルダが含まれる親フォルダ、あるいは単一の`route_*`フォルダを選択させる
+        base_dir = filedialog.askdirectory(title="シミュレーションフォルダ(route_*が入っている親フォルダ、またはroute_*自体)を選択")
+        if not base_dir:
+            self.log("フォルダが選択されなかったため、処理を中断しました。")
+            return
+        
+        self.log(f"選択されたフォルダ: {base_dir}")
+
+        # 2. 処理対象となる `route_*` フォルダをリストアップ
+        route_dirs = []
+        # 選択されたフォルダ自身が `route_*` かどうかをチェック
+        if os.path.basename(base_dir).startswith('route_'):
+            route_dirs.append(base_dir)
+            self.log(f"単一の経路フォルダ {os.path.basename(base_dir)} を処理対象とします。")
+        else:
+            # 親フォルダとして、中の `route_*` を探す
+            try:
+                found_dirs = sorted([
+                    os.path.join(base_dir, d) for d in os.listdir(base_dir) 
+                    if os.path.isdir(os.path.join(base_dir, d)) and d.startswith('route_')
+                ])
+                if not found_dirs:
+                    self.result_queue.put(f"選択されたフォルダ内に 'route_*' という名前のサブフォルダが見つかりませんでした。")
+                    return
+                route_dirs.extend(found_dirs)
+                self.log(f"発見された経路フォルダ: {[os.path.basename(d) for d in route_dirs]}")
+            except Exception as e:
+                self.result_queue.put(f"フォルダのスキャン中にエラーが発生しました: {e}")
+                return
+            
+        # --- ここからが新しい処理フロー ---
+        all_results = {}
+        total_sims = sum(len([f for f in os.listdir(rd) if f.endswith(".inp")]) for rd in route_dirs)
+        completed_sims = 0
+
+        # 3. 各 `route_*` フォルダを順番に処理
+        for route_dir in route_dirs:
+            route_name = os.path.basename(route_dir)
+            self.log(f"--- {route_name} の処理を開始 ---")
+            
+            inp_files = sorted([os.path.join(route_dir, f) for f in os.listdir(route_dir) if f.endswith(".inp")])
+            if not inp_files:
+                self.log(f"{route_name} 内に .inp ファイルが見つかりませんでした。スキップします。")
+                continue
+
+            doses_for_route = []
+            
+            # 4. 各 `.inp` ファイルに対してPHITSを実行
+            for inp_path in inp_files:
+                completed_sims += 1
+                progress = f"({completed_sims}/{total_sims})"
+                self.log(f"{progress} {os.path.basename(inp_path)} のPHITS実行中...")
+                
+                # phits_handler に inp_path を渡して実行を依頼
+                # run_* フォルダの作成と input.inp へのコピーは execute_phits_simulation 内で行われる
+                success, result = execute_phits_simulation(inp_path, phits_command)
+                
+                if not success:
+                    error_msg = f"PHITS実行エラー ({os.path.basename(inp_path)}):\n{result}"
+                    self.log(error_msg)
+                    self.result_queue.put(error_msg) # エラーをメインスレッドに通知
+                    return # 処理を中断
+                
+                run_dir, log_msg = result
+                self.log(log_msg)
+
+                # 線量抽出
+                dose, error = extract_dose_from_deposit(run_dir)
+                if error:
+                    extract_error_msg = f"線量抽出エラー ({os.path.basename(run_dir)}):\n{error}"
+                    self.log(extract_error_msg)
+                    self.result_queue.put(extract_error_msg)
+                    return # 処理を中断
+                
+                doses_for_route.append(dose)
+                self.log(f"  -> 抽出された線量: {dose:.4e} Gy/source")
+            
+            all_results[route_name] = doses_for_route
+            self.log(f"--- {route_name} の処理が正常に完了 ---")
+
+        # 5. 全ての処理が完了したら、結果をプロットキューに入れる
+        self.result_queue.put(all_results)
+        self.log("全ての経路の処理が完了しました。")
+
+    def run_phits_and_plot_threaded(self):
+        """バックグラウンドでPHITSを実行し、結果をプロットする"""
+        thread = threading.Thread(target=self.run_phits_and_plot_worker)
+        thread.start()
+        self.log("PHITS実行と結果プロット処理をバックグラウンドで開始しました。")
+        messagebox.showinfo("処理中", "PHITS実行と結果プロット処理をバックグラウンドで開始しました。\n進捗はログを確認してください。")
+
+    def generate_debug_batch_file(self):
+        """
+        PHITS実行のデバッグを容易にするためのバッチファイルを生成する。
+        """
+        self.log("デバッグ用バッチファイルの生成を開始します...")
+
+        phits_command = self.sim_controls_view.get_phits_command()
+        if not phits_command:
+            messagebox.showerror("設定エラー", "PHITS実行コマンドが設定されていません。")
+            return
+
+        # 処理対象の単一の route_* フォルダを選択させる
+        target_dir = filedialog.askdirectory(title="デバッグ対象の route_* フォルダを選択")
+        if not target_dir or not os.path.basename(target_dir).startswith('route_'):
+            self.log("デバッグ対象のフォルダが選択されませんでした。")
+            return
+        
+        inp_files = sorted([f for f in os.listdir(target_dir) if f.endswith(".inp")])
+        if not inp_files:
+            messagebox.showinfo("情報", f"選択したフォルダに .inp ファイルが見つかりませんでした。")
+            return
+
+        # バッチファイルの内容を生成
+        batch_content = [
+            "@echo off",
+            "echo --- PHITS Execution Test Batch File ---",
+            "echo.",
+            f"echo Target Directory: {target_dir}",
+            f"echo PHITS Command:    {phits_command}",
+            "echo.",
+            "echo Press any key to start the first simulation...",
+            "pause > nul",
+            ""
+        ]
+
+        for inp_file in inp_files:
+            base_name = os.path.splitext(inp_file)[0]
+            run_dir = os.path.join(target_dir, f"run_{base_name}")
+            
+            batch_content.append(f"echo --- Running for {inp_file} ---")
+            batch_content.append(f'if not exist "{run_dir}" mkdir "{run_dir}"')
+            batch_content.append(f'copy "{os.path.join(target_dir, inp_file)}" "{os.path.join(run_dir, "input.inp")}"')
+            # 1021.pyを参考に、より堅牢なコマンド実行方法に変更
+            batch_content.append(f'cd /d "{run_dir}"')
+            batch_content.append(f"{phits_command} input.inp")
+            batch_content.append("echo Execution finished. Check this window for errors.")
+            batch_content.append("echo Press any key to continue to the next step...")
+            batch_content.append("pause > nul")
+            batch_content.append("")
+
+        batch_content.append("echo --- All tests finished. ---")
+        batch_content.append("pause")
+
+        # バッチファイルを保存
+        batch_path = os.path.join(target_dir, "_run_phits_test.bat")
+        try:
+            with open(batch_path, "w", encoding="cp932") as f:
+                f.write("\n".join(batch_content))
+            
+            msg = (f"デバッグ用のバッチファイルを生成しました:\n"
+                   f"{batch_path}\n\n"
+                   f"【確認手順】\n"
+                   f"1. 上記ファイルをエクスプローラーで開いてください。\n"
+                   f"2. 「_run_phits_test.bat」をダブルクリックして実行してください。\n"
+                   f"3. 黒い画面が表示され、キーを押すごとに1ステップずつPHITSが実行されます。\n\n"
+                   f"もしエラーメッセージが表示されたら、その内容を教えてください。")
+            messagebox.showinfo("デバッグファイル生成完了", msg)
+            self.log("デバッグ用バッチファイルを生成しました。")
+
+        except Exception as e:
+            messagebox.showerror("生成エラー", f"バッチファイルの生成に失敗しました: {e}")
+            self.log(f"デバッグ用バッチファイルの生成に失敗: {e}")
+
+    def select_phits_executable(self):
+        """PHITSの実行ファイルを選択するダイアログを開く"""
+        filepath = filedialog.askopenfilename(
+            title="PHITS実行ファイル (phits.batなど) を選択",
+            filetypes=[("Batch Files", "*.bat"), ("All Files", "*.*")]
+        )
+        # ユーザーがキャンセルした場合は何もしない
+        if not filepath:
+            self.log("PHITS実行ファイルの選択がキャンセルされました。")
+            return
+
+        # 選択されたパスを SimulationControlsView に設定
+        try:
+            self.sim_controls_view.set_phits_command(filepath)
+            self.log(f"PHITS実行ファイルを選択しました: {filepath}")
+        except Exception as e:
+            self.log(f"PHITS実行ファイルの設定に失敗しました: {e}")
 
 if __name__ == "__main__":
-    app = MainApplication()
-    app.mainloop()
+    try:
+        app = MainApplication()
+        app.mainloop()
+    except Exception as e:
+        import traceback
+        with open("startup_error.log", "w") as f:
+            f.write("アプリケーションの起動中にエラーが発生しました。\n")
+            f.write(str(e) + "\n")
+            f.write(traceback.format_exc())
+        messagebox.showerror("起動エラー", f"アプリケーションの起動に失敗しました。詳細は startup_error.log を確認してください。\\n{e}")
+
+

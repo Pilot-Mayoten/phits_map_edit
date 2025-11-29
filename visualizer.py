@@ -4,8 +4,46 @@
 matplotlibを使用したグラフ描画機能を担当するモジュール。
 """
 
+import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
+import matplotlib.font_manager as fm
+from pathlib import Path
+
+_japanese_font_found = False
+_font_prop = None
+
+def set_japanese_font():
+    """
+    日本語対応フォントをmatplotlibに設定する。
+    システムにインストールされている日本語フォントを探し、最初に見つかったものを利用する。
+    """
+    global _japanese_font_found, _font_prop
+    if _japanese_font_found:
+        if _font_prop:
+            plt.rcParams['font.family'] = _font_prop.get_name()
+        return
+
+    font_dir = Path("C:/Windows/Fonts")
+    font_files = ["meiryo.ttc", "msgothic.ttc", "yugothb.ttc"]
+    
+    found_font_path = None
+    for font_file in font_files:
+        path = font_dir / font_file
+        if path.exists():
+            found_font_path = str(path)
+            break
+            
+    if found_font_path:
+        _font_prop = fm.FontProperties(fname=found_font_path)
+        plt.rcParams['font.family'] = _font_prop.get_name()
+        _japanese_font_found = True
+        print(f"日本語フォント '{_font_prop.get_name()}' ({found_font_path}) を設定しました。")
+    else:
+        print("警告: 日本語フォントが見つかりませんでした。グラフの文字化けが発生する可能性があります。")
+        # デフォルトの sans-serif ファミリーを使う
+        plt.rcParams['font.family'] = plt.rcParams['font.sans-serif']
 
 def visualize_routes_3d(routes, sources):
     """
@@ -16,6 +54,7 @@ def visualize_routes_3d(routes, sources):
                              各辞書には "detailed_path" キーが含まれている必要がある。
         sources (list[tuple]): 線源の(x, y, z)座標のリスト。
     """
+    set_japanese_font() # ★フォント設定を呼び出し
     if not routes:
         print("可視化対象の経路がありません。")
         return
@@ -46,13 +85,15 @@ def visualize_routes_3d(routes, sources):
         sz = [s[2] for s in sources]
         ax.scatter(sx, sy, sz, color='red', marker='*', s=200, edgecolors='black', label="Sources")
 
-    ax.set_xlabel("X-axis [cm]")
-    ax.set_ylabel("Y-axis [cm]")
-    ax.set_zlabel("Z-axis [cm]")
-    ax.set_title("3D Visualization of Routes and Source Locations")
+    ax.set_xlabel("X-axis [cm]", fontproperties=_font_prop)
+    ax.set_ylabel("Y-axis [cm]", fontproperties=_font_prop)
+    ax.set_zlabel("Z-axis [cm]", fontproperties=_font_prop)
+    ax.set_title("3D Visualization of Routes and Source Locations", fontproperties=_font_prop)
     
-    # 凡例を表示
-    ax.legend()
+    # 凡例のフォントも設定
+    legend = ax.legend()
+    for text in legend.get_texts():
+        text.set_font_properties(_font_prop)
     
     # グリッド表示
     ax.grid(True)
@@ -94,6 +135,7 @@ def visualize_routes_2d(routes, sources):
         routes (list[dict]): 経路情報のリスト。各辞書には "detailed_path" キーが含まれている必要がある。
         sources (list[tuple]): 線源の(x, y, z)座標のリスト。Zは無視してXY平面に投影する。
     """
+    set_japanese_font() # ★フォント設定を呼び出し
     if not routes:
         print("可視化対象の経路がありません。")
         return
@@ -126,10 +168,14 @@ def visualize_routes_2d(routes, sources):
         all_x.extend(sx)
         all_y.extend(sy)
 
-    ax.set_xlabel("X-axis [cm]")
-    ax.set_ylabel("Y-axis [cm]")
-    ax.set_title("2D Visualization (Top-Down) of Routes and Source Locations")
-    ax.legend()
+    ax.set_xlabel("X-axis [cm]", fontproperties=_font_prop)
+    ax.set_ylabel("Y-axis [cm]", fontproperties=_font_prop)
+    ax.set_title("2D Visualization (Top-Down) of Routes and Source Locations", fontproperties=_font_prop)
+    
+    legend = ax.legend()
+    for text in legend.get_texts():
+        text.set_font_properties(_font_prop)
+        
     ax.grid(True)
 
     # 軸範囲とアスペクト調整
@@ -146,6 +192,34 @@ def visualize_routes_2d(routes, sources):
         except Exception:
             pass
 
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_dose_profile(route_results):
+    """
+    複数の経路の線量プロファイルを1つのグラフにプロットする。
+    route_results: { "Route 1": [dose1, dose2, ...], "Route 2": ... } という形式の辞書
+    """
+    set_japanese_font() # ★フォント設定を呼び出し
+    plt.style.use('seaborn-v0_8-whitegrid')
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    for route_name, doses in route_results.items():
+        steps = range(1, len(doses) + 1)
+        ax.plot(steps, doses, marker='o', linestyle='-', label=route_name)
+    
+    ax.set_xlabel("評価ステップ数", fontsize=12, fontproperties=_font_prop)
+    ax.set_ylabel("吸収線量 [Gy/source]", fontsize=12, fontproperties=_font_prop)
+    ax.set_title("各経路のステップごとの線量プロファイル", fontsize=16, fontproperties=_font_prop)
+    
+    legend = ax.legend()
+    for text in legend.get_texts():
+        text.set_font_properties(_font_prop)
+        
+    ax.set_yscale('log') # 線量の変化が大きいため対数スケールを推奨
+    ax.grid(True, which="both", ls="--", c='0.7')
+    
     plt.tight_layout()
     plt.show()
 
