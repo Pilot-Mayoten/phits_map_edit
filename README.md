@@ -87,3 +87,65 @@ pip install matplotlib
 -   `{maxcas_value}`, `{maxbch_value}`: 計算回数など。
 
 ロボットの形状（サイズや材質など）を変更したい場合は、この`template.inp`の`[Surface]`や`[Cell]`、`[Material]`セクションを直接編集してください。
+
+## 開発者向け情報
+
+このプロジェクトへの貢献や、複数PCでの開発を行う方向けの情報です。
+
+### Gitによるバージョン管理
+
+ソースコードはGitで管理されています。リモートリポジトリはGitHubにあります。
+
+-   **リポジトリのクローン (初回のみ):**
+    ```powershell
+    # HTTPSを利用する場合
+    git clone https://github.com/Pilot-Mayoten/phits_map_edit.git
+
+    # SSHを利用する場合 (推奨、後述の設定が必要)
+    git clone git@github.com:Pilot-Mayoten/phits_map_edit.git
+    ```
+
+-   **変更内容のプッシュ (リモートへ保存):**
+    ```powershell
+    git add .
+    git commit -m "変更内容の要約"
+    git push
+    ```
+
+-   **最新内容のプル (リモートから取得):**
+    ```powershell
+    git pull
+    ```
+
+### SSHキーの設定 (推奨)
+
+複数PCで開発を行う場合や、毎回パスワードを入力する手間を省くために、SSHキーによる認証を推奨します。
+
+1.  **SSHキーの生成:**
+    PowerShellを開き、以下のコマンドを実行します。`your_email@example.com`はご自身のメールアドレスに置き換えてください。
+    ```powershell
+    ssh-keygen -t ed25519 -C "your_email@example.com"
+    ```
+    -   保存先やパスフレーズを聞かれますが、基本的にEnterキーを押していけば完了します。
+
+2.  **公開鍵のコピー:**
+    生成した公開鍵 (`id_ed25519.pub`) の内容をクリップボードにコピーします。
+    ```powershell
+    Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub | Set-Clipboard
+    ```
+
+3.  **GitHubへの登録:**
+    -   [GitHubのSSHキー設定ページ](https://github.com/settings/keys)にアクセスします。
+    -   `New SSH key` ボタンを押し、`Title`にPCの名前など分かりやすい名前を、`Key`にコピーした公開鍵を貼り付けて保存します。
+
+4.  **リモートURLの切り替え:**
+    既存のリポジトリでHTTPSからSSHに切り替える場合は、以下のコマンドを実行します。
+    ```powershell
+    git remote set-url origin git@github.com:Pilot-Mayoten/phits_map_edit.git
+    ```
+
+5.  **接続テスト:**
+    ```powershell
+    ssh -T git@github.com
+    ```
+    -   `Hi Pilot-Mayoten! You've successfully authenticated...` というメッセージが表示されれば成功です。
