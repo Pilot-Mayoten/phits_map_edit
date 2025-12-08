@@ -44,10 +44,6 @@ class SimulationControlsView(tk.Frame):
         # --- 中間部：シミュレーション実行 ---
         action_frame = self._create_simulation_actions_panel(main_paned)
         main_paned.add(action_frame, weight=1)
-        
-        # --- 下部：ログ表示 ---
-        log_frame = self._create_log_display_panel(main_paned)
-        main_paned.add(log_frame, weight=2) # weightを増やして高さを確保
 
     def _create_route_definition_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路定義", padding=10)
@@ -144,13 +140,6 @@ class SimulationControlsView(tk.Frame):
 
         return frame
 
-    def _create_log_display_panel(self, parent):
-        frame = ttk.LabelFrame(parent, text="ログ", padding=10)
-        # tk.Textからscrolledtext.ScrolledTextに変更
-        self.log_text = scrolledtext.ScrolledText(frame, height=10, state='disabled', wrap='word', bg='#f0f0f0')
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        return frame
-
     def get_route_definition_data(self):
         """経路定義フォームから入力値を取得して辞書として返す"""
         try:
@@ -203,5 +192,5 @@ class SimulationControlsView(tk.Frame):
         """ログウィジェットにメッセージを追記する"""
         self.log_text.config(state='normal')
         self.log_text.insert(tk.END, message + '\n') # 改行コードを '\\n' から '\n' に修正
-        self.log_text.config(state='disabled')
-        self.log_text.see(tk.END)
+        indices = [int(self.tree.item(item, "values")[0]) - 1 for item in selected_items]
+        return sorted(indices, reverse=True) # 逆順ソートで削除時のインデックスエラーを防ぐ

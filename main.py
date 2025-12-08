@@ -49,8 +49,14 @@ class MainApplication(tk.Tk):
         self.result_queue = Queue() # ★結果受け渡し用のキューを追加
 
         # --- 2. メインレイアウトの作成 ---
-        main_paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
-        main_paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # 全体を上下に分割するPanedWindow
+        root_pane = tk.PanedWindow(self, orient=tk.VERTICAL, sashrelief=tk.RAISED)
+        root_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 上半分（既存のメインコンテンツ）
+        main_paned = tk.PanedWindow(root_pane, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
+        root_pane.add(main_paned, stretch="always")
+
 
         # --- 3. GUIモジュールのインスタンス化 ---
         self.map_editor_view = MapEditorView(main_paned, 
@@ -72,6 +78,13 @@ class MainApplication(tk.Tk):
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
         main_paned.add(self.sim_controls_view, width=800)
+
+        # 下半分（ログ表示エリア）
+        log_frame = tk.LabelFrame(root_pane, text="実行ログ", padx=5, pady=5)
+        root_pane.add(log_frame, stretch="never", height=200) # 初期高さを指定
+
+        self.log_text = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, font=("Meiryo UI", 9))
+        self.log_text.pack(fill=tk.BOTH, expand=True)
 
         # --- 4. ステータスバー ---
         self.status_var = tk.StringVar(value="準備完了")
@@ -107,11 +120,11 @@ class MainApplication(tk.Tk):
         try:
             while True:
                 message = self.log_queue.get_nowait()
-                print(message) # コンソールにも出力
-                # ステータスバーにログメッセージを表示
-                current_text = self.status_var.get()
-                new_text = f"{current_text}\n{message}" if current_text else message
-                self.status_var.set(new_text)
+                # ScrolledTextにログを追記
+                self.log_text.configure(state='normal')
+                self.log_text.insert(tk.END, message + '\n')
+                self.log_text.configure(state='disabled')
+                self.log_text.see(tk.END) # 自動で最終行までスクロール
 
         except Empty:
             pass # キューが空なら何もしない
@@ -337,8 +350,11 @@ class MainApplication(tk.Tk):
 
     def log(self, message):
         """ログメッセージをコンソールに出力し、GUI更新のためにキューに入れる"""
-        print(message)
-        self.log_queue.put(message)
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        print(log_entry)
+        self.log_queue.put(log_entry)
 
     def run_phits_and_plot_worker(self):
         """
