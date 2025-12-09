@@ -15,7 +15,7 @@ from app_config import (MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y,
                         CELL_HEIGHT_Z, WORLD_MARGIN)
 from utils import get_physical_coords
 
-def generate_environment_input_file(map_data):
+def generate_environment_input_file(map_data, nuclide="Cs-137", activity=1.0E+12):
     """
     現在のマップデータから、環境定義用のPHITS入力ファイル文字列を生成し、
     ファイル保存ダイアログを表示して保存する。
@@ -117,7 +117,7 @@ def generate_environment_input_file(map_data):
                 f"      dir = all          $ Isotropic",
                 "   e-type = 28             $ RI source",
                 "       ni = 1",
-                "     Cs-137 1.0E+12      $ 1.0E12 Bq",
+                f"     {nuclide} {activity:.1e}      $ {activity:.1e} Bq",
                 "    dtime = -10.0",
                 "     norm = 0              $ Output in [/sec]"
             ])

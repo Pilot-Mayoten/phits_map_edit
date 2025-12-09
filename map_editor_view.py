@@ -35,7 +35,7 @@ class MapEditorView(tk.Frame):
         self.create_map_grid(grid_container)
 
     def create_toolbox(self, parent):
-        tk.Label(parent, text="ツール選択", font=("", 12, "bold")).pack(pady=10)
+        tk.Label(parent, text="ツール選択", font=("Meiryo UI", 13, "bold")).pack(pady=10)
 
         for name, (_, color) in CELL_TYPES.items():
             rb = tk.Radiobutton(
@@ -44,25 +44,30 @@ class MapEditorView(tk.Frame):
                 variable=self.current_tool,
                 value=name,
                 indicatoron=False,
-                width=12,
+                width=14,
+                height=2,
                 background=color,
                 selectcolor=color,
-                fg="white" if color in ["black", "red", "blue"] else "black"
+                activebackground=color,
+                font=("Meiryo UI", 11),
+                fg="white" if color in ["black", "red", "blue"] else "black",
+                relief=tk.RAISED,
+                bd=2
             )
-            rb.pack(pady=3, padx=10)
+            rb.pack(pady=5, padx=10, fill=tk.X)
 
     def create_map_grid(self, parent):
         # --- X軸ラベル (上部) ---
         for c in range(0, MAP_COLS, 5):
             x_val = c * CELL_SIZE_X
-            lbl = tk.Label(parent, text=f"{x_val:.0f}")
-            lbl.grid(row=0, column=c+1, sticky="w") 
+            lbl = tk.Label(parent, text=f"{x_val:.0f}", font=("Meiryo UI", 9, "bold"), bg="#e0e0e0")
+            lbl.grid(row=0, column=c+1, sticky="ew", padx=1, pady=1) 
 
         # --- Y軸ラベル (左側) ---
         for r in range(0, MAP_ROWS, 5):
             y_val = (MAP_ROWS - r) * CELL_SIZE_Y
-            lbl = tk.Label(parent, text=f"{y_val:.0f}", width=4, anchor="e")
-            lbl.grid(row=r+1, column=0, sticky="n")
+            lbl = tk.Label(parent, text=f"{y_val:.0f}", width=5, anchor="e", font=("Meiryo UI", 9, "bold"), bg="#e0e0e0")
+            lbl.grid(row=r+1, column=0, sticky="ns", padx=1, pady=1)
 
         # --- グリッドボタン本体 ---
         for r in range(MAP_ROWS):
@@ -71,12 +76,15 @@ class MapEditorView(tk.Frame):
                 btn = tk.Button(
                     parent,
                     text="",
-                    width=2,
-                    height=1,
+                    width=3,
+                    height=2,
                     bg=CELL_TYPES["床 (通行可)"][1],
+                    activebackground="#ffffff",
+                    relief=tk.SOLID,
+                    bd=1,
                     command=lambda r_val=r, c_val=c: self.on_cell_click_callback(r_val, c_val)
                 )
-                btn.grid(row=r+1, column=c+1, sticky="nsew")
+                btn.grid(row=r+1, column=c+1, sticky="nsew", padx=1, pady=1)
                 
                 btn.bind("<Enter>", lambda event, r_val=r, c_val=c: self.on_hover_callback(r_val, c_val))
                 

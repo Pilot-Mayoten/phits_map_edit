@@ -16,10 +16,13 @@ class SimulationControlsView(tk.Frame):
         # スタイル設定
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure("TButton", padding=6, relief="flat", background="#ccc")
-        style.configure("TLabel", padding=2)
-        style.configure("TEntry", padding=4)
-        style.configure("TLabelframe.Label", font=('Helvetica', 12, 'bold'))
+        style.configure("TButton", padding=8, font=("Meiryo UI", 10))
+        style.configure("TLabel", padding=4, font=("Meiryo UI", 10))
+        style.configure("TEntry", padding=6, font=("Meiryo UI", 10))
+        style.configure("TLabelframe", padding=10)
+        style.configure("TLabelframe.Label", font=("Meiryo UI", 11, "bold"))
+        style.configure("Treeview", font=("Meiryo UI", 10), rowheight=25)
+        style.configure("Treeview.Heading", font=("Meiryo UI", 10, "bold"))
         
         self.create_widgets()
 
@@ -30,7 +33,7 @@ class SimulationControlsView(tk.Frame):
 
         # --- 上部：経路定義とリスト ---
         top_frame = ttk.Frame(main_paned)
-        main_paned.add(top_frame, weight=2)
+        main_paned.add(top_frame, weight=3) # 経路リストの比率を少し上げる
 
         top_paned = ttk.PanedWindow(top_frame, orient=tk.HORIZONTAL)
         top_paned.pack(fill=tk.BOTH, expand=True)
@@ -43,28 +46,18 @@ class SimulationControlsView(tk.Frame):
 
         # --- 中間部：シミュレーション実行 ---
         action_frame = self._create_simulation_actions_panel(main_paned)
-        main_paned.add(action_frame, weight=1)
+        main_paned.add(action_frame, weight=2, minsize=300) # 比率を上げ、最低サイズを確保
 
     def _create_route_definition_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路定義", padding=10)
 
-        # --- 入力フィールド ---
-        self.entries = {}
-        # 注目点 (Start/Goal) はマップから取得するため、ここでは定義しない
-        labels = {
-            "nuclide": "核種",
-            "activity": "放射能 (Bq)",
-        }
+        # --- 説明テキスト ---
+        info_label = ttk.Label(frame, text="核種と放射能は「1. 環境入力を生成」で設定します。\n\nPHITS実行ファイルを指定してください。")
+        info_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=8, pady=10)
 
-        for i, (key, text) in enumerate(labels.items()):
-            ttk.Label(frame, text=text).grid(row=i, column=0, sticky="w", padx=5, pady=2)
-            entry = ttk.Entry(frame, width=15)
-            entry.grid(row=i, column=1, columnspan=3, sticky="we", padx=5, pady=2)
-            self.entries[key] = entry
-
-        # PHITS実行コマンドの入力欄を追加
+        # --- PHITS実行コマンドの入力欄を追加 ---
         phits_cmd_frame = ttk.Frame(frame)
-        phits_cmd_frame.grid(row=i + 1, column=0, columnspan=4, sticky="we", pady=2)
+        phits_cmd_frame.grid(row=1, column=0, columnspan=4, sticky="we", pady=8)
         ttk.Label(phits_cmd_frame, text="PHITS実行ファイル").pack(side=tk.LEFT, padx=5)
         self.phits_command_entry = ttk.Entry(phits_cmd_frame)
         self.phits_command_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -72,13 +65,9 @@ class SimulationControlsView(tk.Frame):
         ttk.Button(phits_cmd_frame, text="参照...", 
                    command=lambda: self.callbacks.get("select_phits_command", lambda: None)()).pack(side=tk.LEFT, padx=5)
 
-        # デフォルト値
-        self.entries["nuclide"].insert(0, "Cs-137")
-        self.entries["activity"].insert(0, "1.0E+12")
-
         # --- アクションボタン ---
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=i + 2, column=0, columnspan=4, pady=10)
+        button_frame.grid(row=2, column=0, columnspan=4, pady=10)
         ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
 
         return frame
@@ -86,15 +75,14 @@ class SimulationControlsView(tk.Frame):
     def _create_route_list_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路リスト", padding=10)
         
-        cols = ("#", "核種", "放射能", "ステップ幅(cm)")
+        cols = ("#", "色", "ステップ幅(cm)")
         self.tree = ttk.Treeview(frame, columns=cols, show="headings")
         for col in cols:
             self.tree.heading(col, text=col)
 
-        self.tree.column("#", width=30, anchor=tk.CENTER)
-        self.tree.column("核種", width=120)
-        self.tree.column("放射能", width=120)
-        self.tree.column("ステップ幅(cm)", width=100, anchor=tk.E)
+        self.tree.column("#", width=40, anchor=tk.CENTER)
+        self.tree.column("色", width=100, anchor=tk.CENTER)
+        self.tree.column("ステップ幅(cm)", width=130, anchor=tk.E)
 
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
@@ -117,44 +105,30 @@ class SimulationControlsView(tk.Frame):
         frame = ttk.LabelFrame(parent, text="実行と可視化", padding=10)
 
         # --- 実行フレーム ---
-        run_frame = ttk.Frame(frame)
-        run_frame.pack(fill=tk.X, pady=(0, 5))
-        ttk.Button(run_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"]).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(run_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None)).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(run_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"]).pack(side=tk.LEFT, padx=5, pady=5)
+        run_frame = ttk.LabelFrame(frame, text="実行ステップ")
+        run_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        ttk.Button(run_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"], width=30).pack(fill=tk.X, padx=5, pady=4)
+        ttk.Button(run_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None), width=30).pack(fill=tk.X, padx=5, pady=4)
+        ttk.Button(run_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"], width=30).pack(fill=tk.X, padx=5, pady=4)
         ttk.Button(run_frame, text="4. 経路上の詳細線量評価", 
-                   command=self.callbacks["run_detailed_simulation"]).pack(fill=tk.X, pady=3)
+                   command=self.callbacks["run_detailed_simulation"], width=30).pack(fill=tk.X, padx=5, pady=4)
         ttk.Button(run_frame, text="5. PHITS実行と結果プロット", 
-                   command=self.callbacks["run_phits_and_plot"]).pack(fill=tk.X, pady=3)
+                   command=self.callbacks["run_phits_and_plot"], width=30).pack(fill=tk.X, padx=5, pady=4)
         
         # --- デバッグ用フレーム ---
-        debug_frame = ttk.Frame(frame)
-        debug_frame.pack(fill=tk.X, pady=(10, 0))
+        debug_frame = ttk.LabelFrame(frame, text="その他の機能")
+        debug_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         ttk.Button(debug_frame, text="デバッグ用バッチファイル生成", 
-                   command=self.callbacks.get("generate_debug_batch")).pack(side=tk.LEFT, padx=5)
-        
-        # --- 可視化フレーム ---
-        vis_frame = ttk.Frame(frame)
-        vis_frame.pack(fill=tk.X)
-        ttk.Button(vis_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"]).pack(side=tk.LEFT, padx=5, pady=5)
+                   command=self.callbacks.get("generate_debug_batch"), width=30).pack(fill=tk.X, padx=5, pady=4)
+        ttk.Button(debug_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=30).pack(fill=tk.X, padx=5, pady=4)
 
         return frame
 
     def get_route_definition_data(self):
         """経路定義フォームから入力値を取得して辞書として返す"""
-        try:
-            data = {
-                "nuclide": self.entries["nuclide"].get(),
-                "activity": self.entries["activity"].get(),
-            }
-            # 簡単なバリデーション
-            if not data["nuclide"] or not data["activity"]:
-                raise ValueError("核種と放射能は必須です。")
-            float(data["activity"]) # 数値変換できるかテスト
-            return data
-        except ValueError as e:
-            messagebox.showerror("入力エラー", f"無効な入力値があります: {e}")
-            return None
+        # 核種と放射能は「環境入力を生成」で設定されるため、ここでは空の辞書を返す
+        data = {}
+        return data
 
     def get_phits_command(self):
         """PHITS実行コマンド入力欄から値を取得する"""
@@ -169,17 +143,18 @@ class SimulationControlsView(tk.Frame):
         """指定された経路リストでTreeviewを更新する"""
         self.tree.delete(*self.tree.get_children())
         for i, r in enumerate(routes):
-            # a_star_pathがあればステップ数を表示、なければステップ幅を表示
-            step_info = f"{len(r['a_star_path'])} pts" if 'a_star_path' in r else r.get('step_width', 'N/A')
+            step_info = f"{len(r['detailed_path'])} pts" if 'detailed_path' in r else r.get('step_width', 'N/A')
+            color = r.get('color', 'black')
 
             values = (
                 i + 1,
-                r.get('nuclide', 'N/A'),
-                r.get('activity', 'N/A'),
+                color,
                 step_info,
             )
-            self.tree.insert("", "end", values=values)
-    
+            # 色のタグを設定
+            tag_name = f"color_{color}"
+            self.tree.tag_configure(tag_name, background=color, foreground="white" if color in ["black", "red", "blue", "green", "purple", "navy"] else "black")
+            self.tree.insert("", "end", values=values, tags=(tag_name,))
     def get_selected_route_indices(self):
         """Treeviewで選択されているアイテムのインデックス(0-based)のリストを返す"""
         selected_items = self.tree.selection()

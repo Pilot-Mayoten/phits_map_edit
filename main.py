@@ -45,6 +45,7 @@ class MainApplication(tk.Tk):
                          for _ in range(MAP_ROWS)]
         self.dose_map = None
         self.routes = [] # 複数の経路情報を管理するリスト
+        self.route_colors = ['red', 'blue', 'green', 'purple', 'orange', 'cyan', 'magenta', 'brown', 'pink', 'gray']
         self.log_queue = Queue()
         self.result_queue = Queue() # ★結果受け渡し用のキューを追加
 
@@ -62,7 +63,7 @@ class MainApplication(tk.Tk):
         self.map_editor_view = MapEditorView(main_paned, 
                                              self.on_cell_click,
                                              self.on_cell_hover)
-        main_paned.add(self.map_editor_view, width=800)
+        main_paned.add(self.map_editor_view, width=900, minsize=750)
         
         callbacks = {
             "generate_env_map": self.generate_env_map,
@@ -77,7 +78,7 @@ class MainApplication(tk.Tk):
             "select_phits_command": self.select_phits_executable, # ★追加
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
-        main_paned.add(self.sim_controls_view, width=800)
+        main_paned.add(self.sim_controls_view, width=500, minsize=400)
 
         # 下半分（ログ表示エリア）
         log_frame = tk.LabelFrame(root_pane, text="実行ログ", padx=5, pady=5)
@@ -104,7 +105,7 @@ class MainApplication(tk.Tk):
                      messagebox.showinfo("完了", "処理が完了しましたが、プロットできる有効なデータがありませんでした。")
                 else:
                     self.log("全経路の処理が完了しました。結果をプロットします。")
-                    visualizer.plot_dose_profile(result)
+                    visualizer.plot_dose_profile(result, self.routes)
                     messagebox.showinfo("成功", "PHITSの一括実行と結果のプロットが完了しました。")
             elif isinstance(result, str): # エラーメッセージ
                 self.log(f"処理中にエラーが発生しました: {result}")
@@ -157,10 +158,8 @@ class MainApplication(tk.Tk):
     def add_route(self):
         """新しい経路を定義リストに追加する"""
         self.log("新しい経路の追加処理を開始します。")
-        route_data = self.sim_controls_view.get_route_definition_data()
-        if not route_data:
-            self.log("経路情報の取得に失敗しました。処理を中断します。")
-            return
+        # get_route_definition_dataは現在使われていないため、空の辞書を生成
+        route_data = {}
 
         start, goal, middle = self.find_special_points()
         if not start or not goal:
@@ -171,9 +170,11 @@ class MainApplication(tk.Tk):
         route_data["start"] = start
         route_data["goal"] = goal
         route_data["middle"] = middle
-        
+        # 経路に色を割り当てる
+        route_data["color"] = self.route_colors[len(self.routes) % len(self.route_colors)]
+
         self.routes.append(route_data)
-        self.log(f"新しい経路を追加しました。総経路数: {len(self.routes)}")
+        self.log(f"新しい経路を追加しました (色: {route_data['color']})。総経路数: {len(self.routes)}")
         self.sim_controls_view.update_route_tree(self.routes)
 
     def delete_route(self):
@@ -194,11 +195,28 @@ class MainApplication(tk.Tk):
         self.sim_controls_view.update_route_tree(self.routes)
 
     def generate_env_map(self):
-        """環境入力ファイル(env_input.inp)を生成する（PHITS実行は行わない）。"""
+        """環境入力ファイル(env_input.inp)を生成する際に、核種と放射能をユーザーに聞く。"""
         self.log("環境入力ファイルの生成を開始します...")
+        
+        # ダイアログで核種を聞く
+        nuclide = simpledialog.askstring("環境設定", "核種を入力してください（例：Cs-137）:", initialvalue="Cs-137")
+        if not nuclide:
+            self.log("核種が入力されなかったため、処理を中断しました。")
+            return
+        
+        # ダイアログで放射能を聞く
+        activity_str = simpledialog.askstring("環境設定", "放射能（Bq）を入力してください（例：1.0E+12）:", initialvalue="1.0E+12")
+        if not activity_str:
+            self.log("放射能が入力されなかったため、処理を中断しました。")
+            return
+        
         try:
-            generate_environment_input_file(self.map_data)
+            activity = float(activity_str)
+            self.log(f"設定内容: 核種={nuclide}, 放射能={activity:.2e} Bq")
+            generate_environment_input_file(self.map_data, nuclide, activity)
             self.log("PHITS環境入力ファイルを生成しました（保存済み）。")
+        except ValueError:
+            self.log(f"エラー: 放射能の値が無効です（{activity_str}）。")
         except Exception as e:
             self.log(f"環境入力生成でエラー: {e}")
 

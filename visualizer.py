@@ -130,20 +130,14 @@ def visualize_routes_3d(routes, sources):
 def visualize_routes_2d(routes, sources):
     """
     登録されたすべての経路と線源を2Dのトップダウン（X-Y平面）で可視化する。
-
-    Args:
-        routes (list[dict]): 経路情報のリスト。各辞書には "detailed_path" キーが含まれている必要がある。
-        sources (list[tuple]): 線源の(x, y, z)座標のリスト。Zは無視してXY平面に投影する。
+    経路ごとに色分けして表示する。
     """
-    set_japanese_font() # ★フォント設定を呼び出し
-    if not routes:
-        print("可視化対象の経路がありません。")
+    set_japanese_font()
+    if not any(r.get("detailed_path") for r in routes):
+        print("可視化対象の詳細経路がありません。")
         return
 
     fig, ax = plt.subplots(figsize=(10, 8))
-
-    # カラーマップを設定
-    colors = plt.cm.viridis([i/len(routes) for i in range(len(routes))])
 
     all_x = []
     all_y = []
@@ -153,18 +147,22 @@ def visualize_routes_2d(routes, sources):
         if not path:
             continue
 
-        color = colors[idx]
+        color = route.get('color', 'gray')
         xs = [p[0] for p in path]
         ys = [p[1] for p in path]
         ax.plot(xs, ys, marker='.', linestyle='-', color=color, label=f"Route {idx+1}")
         all_x.extend(xs)
         all_y.extend(ys)
+        
+        # 始点と終点を強調
+        ax.scatter(xs[0], ys[0], color=color, marker='^', s=150, edgecolors='black') # Start
+        ax.scatter(xs[-1], ys[-1], color=color, marker='s', s=150, edgecolors='black') # Goal
 
     # 線源をプロット (Zは無視してXY投影)
     if sources:
         sx = [s[0] for s in sources]
         sy = [s[1] for s in sources]
-        ax.scatter(sx, sy, color='red', marker='*', s=150, edgecolors='black', label='Sources')
+        ax.scatter(sx, sy, color='yellow', marker='*', s=300, edgecolors='black', label='Sources')
         all_x.extend(sx)
         all_y.extend(sy)
 
@@ -182,9 +180,8 @@ def visualize_routes_2d(routes, sources):
     if all_x and all_y:
         min_x, max_x = min(all_x), max(all_x)
         min_y, max_y = min(all_y), max(all_y)
-        # パディング
-        pad_x = (max_x - min_x) * 0.05 if max_x > min_x else 0.5
-        pad_y = (max_y - min_y) * 0.05 if max_y > min_y else 0.5
+        pad_x = (max_x - min_x) * 0.1 if max_x > min_x else 1
+        pad_y = (max_y - min_y) * 0.1 if max_y > min_y else 1
         ax.set_xlim(min_x - pad_x, max_x + pad_x)
         ax.set_ylim(min_y - pad_y, max_y + pad_y)
         try:
@@ -196,18 +193,29 @@ def visualize_routes_2d(routes, sources):
     plt.show()
 
 
-def plot_dose_profile(route_results):
+def plot_dose_profile(route_results, routes_data):
     """
     複数の経路の線量プロファイルを1つのグラフにプロットする。
-    route_results: { "Route 1": [dose1, dose2, ...], "Route 2": ... } という形式の辞書
+    route_results: { "route_1": [dose1, ...], ... }
+    routes_data: self.routes のリスト
     """
-    set_japanese_font() # ★フォント設定を呼び出し
+    set_japanese_font()
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    for route_name, doses in route_results.items():
+    # route_resultsのキー（"route_1"など）からインデックスを取得
+    for route_key, doses in route_results.items():
+        try:
+            route_index = int(route_key.split('_')[-1]) - 1
+            route_info = routes_data[route_index]
+            color = route_info.get('color', 'gray')
+            label = f"Route {route_index + 1}"
+        except (ValueError, IndexError):
+            color = 'gray'
+            label = route_key
+
         steps = range(1, len(doses) + 1)
-        ax.plot(steps, doses, marker='o', linestyle='-', label=route_name)
+        ax.plot(steps, doses, marker='o', linestyle='-', label=label, color=color)
     
     ax.set_xlabel("評価ステップ数", fontsize=12, fontproperties=_font_prop)
     ax.set_ylabel("吸収線量 [Gy/source]", fontsize=12, fontproperties=_font_prop)
@@ -217,7 +225,7 @@ def plot_dose_profile(route_results):
     for text in legend.get_texts():
         text.set_font_properties(_font_prop)
         
-    ax.set_yscale('log') # 線量の変化が大きいため対数スケールを推奨
+    ax.set_yscale('log')
     ax.grid(True, which="both", ls="--", c='0.7')
     
     plt.tight_layout()
