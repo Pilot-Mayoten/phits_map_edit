@@ -159,14 +159,16 @@ def generate_environment_input_file(map_data, nuclide="Cs-137", activity=1.0E+12
         title="環境定義ファイル (env_input.inp) として保存"
     )
     
-    if not filepath: return
+    if not filepath: return None
 
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(final_input_string)
         messagebox.showinfo("生成成功", f"保存しました:\n{filepath}")
+        return filepath  # ★成功時にファイルパスを返す
     except Exception as e:
         messagebox.showerror("保存エラー", f"{e}")
+        return None
 
 
 class AdvancedPhitsMerger:
@@ -574,7 +576,7 @@ def load_and_parse_dose_map():
         messagebox.showerror("読み込みエラー", f"{e}")
         return None
 
-def execute_phits_simulation(inp_path, phits_command="phits.bat"):
+def execute_phits_simulation(inp_path, phits_command="phits.bat", expected_output="deposit.out"):
     """
     指定された.inpファイルでPHITSシミュレーションを実行する。
     1021.pyを参考に、より堅牢な実行方法を採用。
@@ -611,9 +613,9 @@ def execute_phits_simulation(inp_path, phits_command="phits.bat"):
         )
         
         # 結果ファイルの存在確認
-        deposit_path = os.path.join(run_dir, "deposit.out")
+        deposit_path = os.path.join(run_dir, expected_output)
         if not os.path.exists(deposit_path):
-            error_message = f"PHITSは終了しましたが、deposit.outが生成されませんでした。\n{log_message}"
+            error_message = f"PHITSは終了しましたが、{expected_output}が生成されませんでした。\n{log_message}"
             return False, error_message
 
         # returncodeが0でなくても、deposit.outがあれば成功とみなす場合もあるが、

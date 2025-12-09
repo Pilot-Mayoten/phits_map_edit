@@ -95,8 +95,6 @@ class SimulationControlsView(tk.Frame):
         # --- デバッグ用フレーム ---
         debug_frame = ttk.LabelFrame(frame, text="その他の機能")
         debug_frame.pack(fill=tk.X, padx=5, pady=(10, 5)) # 上方向のpaddingを増やす
-        ttk.Button(debug_frame, text="デバッグ用バッチファイル生成", 
-                   command=self.callbacks.get("generate_debug_batch"), width=30).pack(fill=tk.X, padx=5, pady=4)
         ttk.Button(debug_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=30).pack(fill=tk.X, padx=5, pady=4)
 
         return frame

@@ -99,7 +99,10 @@ class MainApplication(tk.Tk):
         """結果キューを処理して、メインスレッドでGUI操作（プロットやダイアログ）を実行"""
         try:
             result = self.result_queue.get_nowait()
-            if isinstance(result, dict): # 正常な結果
+            
+            # --- 結果のタイプを判定 ---
+            # 1. 詳細線量評価の結果 (辞書型)
+            if isinstance(result, dict):
                 if not result:
                      self.log("プロットできる有効な結果がありませんでした。")
                      messagebox.showinfo("完了", "処理が完了しましたが、プロットできる有効なデータがありませんでした。")
@@ -107,7 +110,18 @@ class MainApplication(tk.Tk):
                     self.log("全経路の処理が完了しました。結果をプロットします。")
                     visualizer.plot_dose_profile(result, self.routes)
                     messagebox.showinfo("成功", "PHITSの一括実行と結果のプロットが完了しました。")
-            elif isinstance(result, str): # エラーメッセージ
+            
+            # 2. 環境シミュレーションの結果 (タプル型)
+            elif isinstance(result, tuple) and result[0] == "env_sim_result":
+                message = result[1]
+                self.log(message)
+                if "エラー" in message:
+                    messagebox.showerror("環境シミュレーションエラー", message)
+                else:
+                    messagebox.showinfo("環境シミュレーション完了", message)
+
+            # 3. その他のエラーメッセージ (文字列型)
+            elif isinstance(result, str):
                 self.log(f"処理中にエラーが発生しました: {result}")
                 messagebox.showerror("処理エラー", result)
 
@@ -213,8 +227,15 @@ class MainApplication(tk.Tk):
         try:
             activity = float(activity_str)
             self.log(f"設定内容: 核種={nuclide}, 放射能={activity:.2e} Bq")
-            generate_environment_input_file(self.map_data, nuclide, activity)
-            self.log("PHITS環境入力ファイルを生成しました（保存済み）。")
+            # ファイルを生成し、保存されたパスを受け取る
+            saved_filepath = generate_environment_input_file(self.map_data, nuclide, activity)
+            
+            if saved_filepath:
+                self.log(f"PHITS環境入力ファイルを生成しました: {saved_filepath}")
+                # ユーザーに続けて実行するか確認
+                if messagebox.askyesno("確認", "環境定義ファイルの生成が完了しました。\n続けてPHITSシミュレーションを実行しますか？"):
+                    self.run_env_simulation_threaded(saved_filepath)
+
         except ValueError:
             self.log(f"エラー: 放射能の値が無効です（{activity_str}）。")
         except Exception as e:
@@ -493,6 +514,35 @@ class MainApplication(tk.Tk):
         thread.start()
         self.log("PHITS実行と結果プロット処理をバックグラウンドで開始しました。")
         messagebox.showinfo("処理中", "PHITS実行と結果プロット処理をバックグラウンドで開始しました。\n進捗はログを確認してください。")
+
+    def run_env_simulation_threaded(self, filepath):
+        """単一の環境入力ファイルでPHITSシミュレーションをバックグラウンド実行する"""
+        thread = threading.Thread(target=self.run_env_simulation_worker, args=(filepath,))
+        thread.start()
+        self.log(f"環境シミュレーションをバックグラウンドで開始しました: {os.path.basename(filepath)}")
+        messagebox.showinfo("処理中", "環境シミュレーションをバックグラウンドで開始しました。\n詳細はログを確認してください。")
+
+    def run_env_simulation_worker(self, inp_path):
+        """環境シミュレーションを実行するワーカースレッド"""
+        self.log(f"環境シミュレーションワーカースレッドを開始: {os.path.basename(inp_path)}")
+        
+        phits_command = self.sim_controls_view.get_phits_command()
+        if not phits_command:
+            self.result_queue.put(("env_sim_result", "PHITS実行コマンドが設定されていません。"))
+            return
+
+        success, result = execute_phits_simulation(inp_path, phits_command, expected_output="deposit_xy.out")
+
+        if success:
+            run_dir, log_msg = result
+            self.log(log_msg)
+            # 成功メッセージをキューに入れる
+            deposit_path = os.path.join(run_dir, 'deposit_xy.out')
+            msg = f"環境シミュレーションが正常に完了しました。\n出力ファイル: {deposit_path}"
+            self.result_queue.put(("env_sim_result", msg))
+        else:
+            self.log(f"環境シミュレーションでエラーが発生しました:\n{result}")
+            self.result_queue.put(("env_sim_result", f"環境シミュレーションでエラーが発生しました:\n{result}"))
 
 
 if __name__ == '__main__':
