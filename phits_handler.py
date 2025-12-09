@@ -202,6 +202,49 @@ class AdvancedPhitsMerger:
     def merge(self):
         self._renumber_and_map_ids()
         self._update_references()
+
+        # --- 新しいロジック: Airセル(ID:1000)に検出器セルIDを除外として追加 ---
+        try:
+            # 1. マージされる検出器セルのIDを取得 (renumber後の新しいID)
+            detector_cell_pattern = re.compile(r'^\s*(\d+)\s+.*trcl=1', re.IGNORECASE)
+            merge_detector_ids = []
+            if 'cell' in self.merge_sections:
+                for line in self.merge_sections['cell'][1]:
+                    match = detector_cell_pattern.match(line)
+                    if match:
+                        # マッピング辞書を使って、元のIDから新しいIDを取得する必要はない
+                        # self.merge_sectionsは既にrenumberされているため、ここにあるIDが新しいID
+                        new_id = int(match.group(1))
+                        merge_detector_ids.append(new_id)
+            
+            # 2. ベースのAirセル(ID:1000)の行を特定し、除外IDを追加
+            if 'cell' in self.base_sections and merge_detector_ids:
+                air_cell_pattern = re.compile(r'^\s*1000\s+')
+                new_base_cell_lines = []
+                exclusion_str = " ".join([f"#{_id}" for _id in merge_detector_ids])
+
+                for line in self.base_sections['cell'][1]:
+                    if air_cell_pattern.match(line):
+                        # 既存のコメントを維持しつつ、除外文字列を追加
+                        parts = line.split('$')
+                        main_part = parts[0].rstrip()
+                        comment_part = f" $ {parts[1].strip()}" if len(parts) > 1 else ""
+                        new_line = f"{main_part} {exclusion_str}{comment_part}"
+                        new_base_cell_lines.append(new_line)
+                    else:
+                        new_base_cell_lines.append(line)
+                
+                # Headerはそのままに、lineリストだけを更新
+                self.base_sections['cell'] = (self.base_sections['cell'][0], new_base_cell_lines)
+
+        except Exception as e:
+            # この処理でエラーが起きてもマージは続行する
+            import traceback
+            print(f"--- Warning: Failed to add detector exclusion to air cell. ---")
+            traceback.print_exc()
+            print(f"--- End Warning ---")
+        # --- ここまでが新しいロジック ---
+
         return self._render_output()
 
     def _renumber_and_map_ids(self):
@@ -324,7 +367,7 @@ class AdvancedPhitsMerger:
         return "\n".join(output_lines)
 
 
-def generate_detailed_simulation_files(routes, output_dir):
+def generate_detailed_simulation_files(routes, output_dir, default_maxcas=None, default_maxbch=None):
     """
     AdvancedPhitsMergerを使用して、経路上の各評価点に対するPHITS入力ファイルを生成する。
     """
@@ -379,14 +422,18 @@ def generate_detailed_simulation_files(routes, output_dir):
                 det_x, det_y, det_z = pt
                 
                 filled_template = template_text
+                # 詳細評価ダイアログで入力された値を最優先し、それが無ければルート固有の値、さらに無ければ既定値(10000)を使う
+                maxcas_val = default_maxcas if default_maxcas is not None else route.get('maxcas', 10000)
+                maxbch_val = default_maxbch if default_maxbch is not None else route.get('maxbch', 10)
+
                 replacements = {
                     '{det_x}': f"{det_x:.3f}",
                     '{det_y}': f"{det_y:.3f}",
                     '{det_z}': f"{det_z:.3f}",
                     '{nuclide_name}': route.get('nuclide', 'Cs-137'),
                     '{activity_value}': route.get('activity', '1.0E+12'),
-                    '{maxcas_value}': str(route.get('maxcas', 10000)),
-                    '{maxbch_value}': str(route.get('maxbch', 10)),
+                    '{maxcas_value}': str(int(maxcas_val)),
+                    '{maxbch_value}': str(int(maxbch_val)),
                     '{detector_cell_id}': str(detector_cell_id), # 動的に決定したIDを適用
                 }
                 for key, val in replacements.items():
