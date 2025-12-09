@@ -83,19 +83,29 @@ class SimulationControlsView(tk.Frame):
 
         # --- 実行フレーム ---
         run_frame = ttk.LabelFrame(frame, text="実行ステップ")
-        run_frame.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(run_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"], width=30).pack(fill=tk.X, padx=5, pady=4)
-        ttk.Button(run_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None), width=30).pack(fill=tk.X, padx=5, pady=4)
-        ttk.Button(run_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"], width=30).pack(fill=tk.X, padx=5, pady=4)
-        ttk.Button(run_frame, text="4. 経路上の詳細線量評価", 
-                   command=self.callbacks["run_detailed_simulation"], width=30).pack(fill=tk.X, padx=5, pady=4)
-        ttk.Button(run_frame, text="5. PHITS実行と結果プロット", 
-                   command=self.callbacks["run_phits_and_plot"], width=30).pack(fill=tk.X, padx=5, pady=4)
+        run_frame.pack(fill=tk.X, padx=5, pady=5, anchor=tk.E)
+        
+        # ボタンフレーム（右寄せ）
+        run_button_frame = ttk.Frame(run_frame)
+        run_button_frame.pack(fill=tk.X, padx=5, pady=4)
+        
+        ttk.Button(run_button_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"], width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(run_button_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None), width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(run_button_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"], width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(run_button_frame, text="4. 経路上の詳細線量評価", 
+                   command=self.callbacks["run_detailed_simulation"], width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(run_button_frame, text="5. PHITS実行と結果プロット", 
+                   command=self.callbacks["run_phits_and_plot"], width=28).pack(fill=tk.X, pady=2)
         
         # --- デバッグ用フレーム ---
         debug_frame = ttk.LabelFrame(frame, text="その他の機能")
-        debug_frame.pack(fill=tk.X, padx=5, pady=(10, 5)) # 上方向のpaddingを増やす
-        ttk.Button(debug_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=30).pack(fill=tk.X, padx=5, pady=4)
+        debug_frame.pack(fill=tk.X, padx=5, pady=(10, 5), anchor=tk.E) # 右寄せアンカーを指定
+        
+        # デバッグボタンフレーム（右寄せ）
+        debug_button_frame = ttk.Frame(debug_frame)
+        debug_button_frame.pack(fill=tk.X, padx=5, pady=4)
+        
+        ttk.Button(debug_button_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=28).pack(fill=tk.X, pady=2)
 
         return frame
 

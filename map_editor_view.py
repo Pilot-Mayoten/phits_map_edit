@@ -76,7 +76,7 @@ class MapEditorView(tk.Frame):
                 btn = tk.Button(
                     parent,
                     text="",
-                    width=3,
+                    width=4,
                     height=2,
                     bg=CELL_TYPES["床 (通行可)"][1],
                     activebackground="#ffffff",

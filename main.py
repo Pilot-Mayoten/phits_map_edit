@@ -63,8 +63,8 @@ class MainApplication(tk.Tk):
         self.map_editor_view = MapEditorView(main_paned, 
                                              self.on_cell_click,
                                              self.on_cell_hover)
-        main_paned.add(self.map_editor_view, width=900)
-        main_paned.paneconfigure(self.map_editor_view, minsize=750)
+        main_paned.add(self.map_editor_view, width=1050)
+        main_paned.paneconfigure(self.map_editor_view, minsize=900)
         
         callbacks = {
             "generate_env_map": self.generate_env_map,
@@ -77,8 +77,8 @@ class MainApplication(tk.Tk):
             "run_phits_and_plot": self.run_phits_and_plot_threaded,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
-        main_paned.add(self.sim_controls_view, width=500)
-        main_paned.paneconfigure(self.sim_controls_view, minsize=400)
+        main_paned.add(self.sim_controls_view, width=300)
+        main_paned.paneconfigure(self.sim_controls_view, minsize=250)
 
         # 下半分（ログ表示エリア）
         log_frame = tk.LabelFrame(root_pane, text="実行ログ", padx=5, pady=5)
