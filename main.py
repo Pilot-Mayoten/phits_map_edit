@@ -38,7 +38,7 @@ class MainApplication(tk.Tk):
 
         super().__init__()
         self.title("🗺️ PHITS Map Editor & Route Planner")
-        self.geometry("1600x900") # Windowサイズを少し拡大
+        self.geometry("1600x1080") # Windowの高さを拡大
 
         # --- 1. 内部データの初期化 ---
         self.map_data = [[CELL_TYPES["床 (通行可)"][0] for _ in range(MAP_COLS)] 
@@ -63,7 +63,8 @@ class MainApplication(tk.Tk):
         self.map_editor_view = MapEditorView(main_paned, 
                                              self.on_cell_click,
                                              self.on_cell_hover)
-        main_paned.add(self.map_editor_view, width=900, minsize=750)
+        main_paned.add(self.map_editor_view, width=900)
+        main_paned.paneconfigure(self.map_editor_view, minsize=750)
         
         callbacks = {
             "generate_env_map": self.generate_env_map,
@@ -75,10 +76,10 @@ class MainApplication(tk.Tk):
             "visualize_routes": self.visualize_routes,
             "run_phits_and_plot": self.run_phits_and_plot_threaded,
             "generate_debug_batch": self.generate_debug_batch_file,
-            "select_phits_command": self.select_phits_executable, # ★追加
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
-        main_paned.add(self.sim_controls_view, width=500, minsize=400)
+        main_paned.add(self.sim_controls_view, width=500)
+        main_paned.paneconfigure(self.sim_controls_view, minsize=400)
 
         # 下半分（ログ表示エリア）
         log_frame = tk.LabelFrame(root_pane, text="実行ログ", padx=5, pady=5)
@@ -548,24 +549,6 @@ class MainApplication(tk.Tk):
         except Exception as e:
             messagebox.showerror("生成エラー", f"バッチファイルの生成に失敗しました: {e}")
             self.log(f"デバッグ用バッチファイルの生成に失敗: {e}")
-
-    def select_phits_executable(self):
-        """PHITSの実行ファイルを選択するダイアログを開く"""
-        filepath = filedialog.askopenfilename(
-            title="PHITS実行ファイル (phits.batなど) を選択",
-            filetypes=[("Batch Files", "*.bat"), ("All Files", "*.*")]
-        )
-        # ユーザーがキャンセルした場合は何もしない
-        if not filepath:
-            self.log("PHITS実行ファイルの選択がキャンセルされました。")
-            return
-
-        # 選択されたパスを SimulationControlsView に設定
-        try:
-            self.sim_controls_view.set_phits_command(filepath)
-            self.log(f"PHITS実行ファイルを選択しました: {filepath}")
-        except Exception as e:
-            self.log(f"PHITS実行ファイルの設定に失敗しました: {e}")
 
 if __name__ == "__main__":
     try:

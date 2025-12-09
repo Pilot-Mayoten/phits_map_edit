@@ -33,50 +33,24 @@ class SimulationControlsView(tk.Frame):
 
         # --- 上部：経路定義とリスト ---
         top_frame = ttk.Frame(main_paned)
-        main_paned.add(top_frame, weight=3) # 経路リストの比率を少し上げる
+        main_paned.add(top_frame, weight=1) # 上部の比率を小さくする
 
         top_paned = ttk.PanedWindow(top_frame, orient=tk.HORIZONTAL)
         top_paned.pack(fill=tk.BOTH, expand=True)
         
-        route_definition_frame = self._create_route_definition_panel(top_paned)
-        top_paned.add(route_definition_frame, weight=1)
+        route_management_frame = self._create_route_management_panel(top_paned)
+        top_paned.add(route_management_frame, weight=1)
 
-        route_list_frame = self._create_route_list_panel(top_paned)
-        top_paned.add(route_list_frame, weight=2)
-
-        # --- 中間部：シミュレーション実行 ---
+        # --- 中-間部：シミュレーション実行 ---
         action_frame = self._create_simulation_actions_panel(main_paned)
-        main_paned.add(action_frame, weight=2, minsize=300) # 比率を上げ、最低サイズを確保
+        main_paned.add(action_frame, weight=4) # 下部の比率を大きくする
 
-    def _create_route_definition_panel(self, parent):
-        frame = ttk.LabelFrame(parent, text="経路定義", padding=10)
-
-        # --- 説明テキスト ---
-        info_label = ttk.Label(frame, text="核種と放射能は「1. 環境入力を生成」で設定します。\n\nPHITS実行ファイルを指定してください。")
-        info_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=8, pady=10)
-
-        # --- PHITS実行コマンドの入力欄を追加 ---
-        phits_cmd_frame = ttk.Frame(frame)
-        phits_cmd_frame.grid(row=1, column=0, columnspan=4, sticky="we", pady=8)
-        ttk.Label(phits_cmd_frame, text="PHITS実行ファイル").pack(side=tk.LEFT, padx=5)
-        self.phits_command_entry = ttk.Entry(phits_cmd_frame)
-        self.phits_command_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.phits_command_entry.insert(0, "phits.bat") # デフォルト値
-        ttk.Button(phits_cmd_frame, text="参照...", 
-                   command=lambda: self.callbacks.get("select_phits_command", lambda: None)()).pack(side=tk.LEFT, padx=5)
-
-        # --- アクションボタン ---
-        button_frame = ttk.Frame(frame)
-        button_frame.grid(row=2, column=0, columnspan=4, pady=10)
-        ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
-
-        return frame
-
-    def _create_route_list_panel(self, parent):
-        frame = ttk.LabelFrame(parent, text="経路リスト", padding=10)
+    def _create_route_management_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text="経路の管理", padding=10)
         
+        # --- 経路リスト ---
         cols = ("#", "色", "ステップ幅(cm)")
-        self.tree = ttk.Treeview(frame, columns=cols, show="headings")
+        self.tree = ttk.Treeview(frame, columns=cols, show="headings", height=5) # 表示行数を5行に制限
         for col in cols:
             self.tree.heading(col, text=col)
 
@@ -95,10 +69,13 @@ class SimulationControlsView(tk.Frame):
         frame.grid_rowconfigure(0, weight=1)
         frame.grid_columnconfigure(0, weight=1)
 
+        # --- ボタン ---
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=5, sticky="w")
-        ttk.Button(button_frame, text="選択を削除", command=self.callbacks["delete_route"]).pack(side=tk.LEFT, padx=5)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0), sticky="ew")
         
+        ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="選択を削除", command=self.callbacks["delete_route"]).pack(side=tk.LEFT, padx=5)
+
         return frame
 
     def _create_simulation_actions_panel(self, parent):
@@ -106,7 +83,7 @@ class SimulationControlsView(tk.Frame):
 
         # --- 実行フレーム ---
         run_frame = ttk.LabelFrame(frame, text="実行ステップ")
-        run_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        run_frame.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(run_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"], width=30).pack(fill=tk.X, padx=5, pady=4)
         ttk.Button(run_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None), width=30).pack(fill=tk.X, padx=5, pady=4)
         ttk.Button(run_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"], width=30).pack(fill=tk.X, padx=5, pady=4)
@@ -117,7 +94,7 @@ class SimulationControlsView(tk.Frame):
         
         # --- デバッグ用フレーム ---
         debug_frame = ttk.LabelFrame(frame, text="その他の機能")
-        debug_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        debug_frame.pack(fill=tk.X, padx=5, pady=(10, 5)) # 上方向のpaddingを増やす
         ttk.Button(debug_frame, text="デバッグ用バッチファイル生成", 
                    command=self.callbacks.get("generate_debug_batch"), width=30).pack(fill=tk.X, padx=5, pady=4)
         ttk.Button(debug_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=30).pack(fill=tk.X, padx=5, pady=4)
@@ -131,13 +108,8 @@ class SimulationControlsView(tk.Frame):
         return data
 
     def get_phits_command(self):
-        """PHITS実行コマンド入力欄から値を取得する"""
-        return self.phits_command_entry.get()
-
-    def set_phits_command(self, path):
-        """PHITS実行コマンド入力欄に値を設定する"""
-        self.phits_command_entry.delete(0, tk.END)
-        self.phits_command_entry.insert(0, path)
+        """PHITS実行コマンドとして 'phits.bat' を返す"""
+        return "phits.bat"
 
     def update_route_tree(self, routes):
         """指定された経路リストでTreeviewを更新する"""
@@ -167,5 +139,3 @@ class SimulationControlsView(tk.Frame):
         """ログウィジェットにメッセージを追記する"""
         self.log_text.config(state='normal')
         self.log_text.insert(tk.END, message + '\n') # 改行コードを '\\n' から '\n' に修正
-        indices = [int(self.tree.item(item, "values")[0]) - 1 for item in selected_items]
-        return sorted(indices, reverse=True) # 逆順ソートで削除時のインデックスエラーを防ぐ
