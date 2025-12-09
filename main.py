@@ -75,7 +75,6 @@ class MainApplication(tk.Tk):
             "delete_route": self.delete_route,
             "visualize_routes": self.visualize_routes,
             "run_phits_and_plot": self.run_phits_and_plot_threaded,
-            "generate_debug_batch": self.generate_debug_batch_file,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
         main_paned.add(self.sim_controls_view, width=500)
@@ -308,10 +307,28 @@ class MainApplication(tk.Tk):
         output_dir = filedialog.askdirectory(title="シミュレーション結果の保存先を選択")
         if not output_dir:
             return
-            
         self.log(f"出力先フォルダ: {output_dir}")
 
-        success, file_count = generate_detailed_simulation_files(self.routes, output_dir)
+        # ユーザに maxcas / maxbch の値を問い合わせ（キャンセルで中断）
+        maxcas_str = simpledialog.askstring("詳細評価設定", "maxcas を入力してください:", initialvalue="10000")
+        if maxcas_str is None:
+            self.log("ユーザが maxcas の入力をキャンセルしました。")
+            return
+        maxbch_str = simpledialog.askstring("詳細評価設定", "maxbch を入力してください:", initialvalue="10")
+        if maxbch_str is None:
+            self.log("ユーザが maxbch の入力をキャンセルしました。")
+            return
+
+        try:
+            maxcas_val = int(maxcas_str)
+        except Exception:
+            maxcas_val = None
+        try:
+            maxbch_val = int(maxbch_str)
+        except Exception:
+            maxbch_val = None
+
+        success, file_count = generate_detailed_simulation_files(self.routes, output_dir, default_maxcas=maxcas_val, default_maxbch=maxbch_val)
         
         if success:
             self.log(f"合計{file_count}個のPHITS入力ファイルを生成しました。")
@@ -477,80 +494,8 @@ class MainApplication(tk.Tk):
         self.log("PHITS実行と結果プロット処理をバックグラウンドで開始しました。")
         messagebox.showinfo("処理中", "PHITS実行と結果プロット処理をバックグラウンドで開始しました。\n進捗はログを確認してください。")
 
-    def generate_debug_batch_file(self):
-        """
-        PHITS実行のデバッグを容易にするためのバッチファイルを生成する。
-        """
-        self.log("デバッグ用バッチファイルの生成を開始します...")
 
-        phits_command = self.sim_controls_view.get_phits_command()
-        if not phits_command:
-            messagebox.showerror("設定エラー", "PHITS実行コマンドが設定されていません。")
-            return
-
-        # 処理対象の単一の route_* フォルダを選択させる
-        target_dir = filedialog.askdirectory(title="デバッグ対象の route_* フォルダを選択")
-        if not target_dir or not os.path.basename(target_dir).startswith('route_'):
-            self.log("デバッグ対象のフォルダが選択されませんでした。")
-            return
-        
-        inp_files = sorted([f for f in os.listdir(target_dir) if f.endswith(".inp")])
-        if not inp_files:
-            messagebox.showinfo("情報", f"選択したフォルダに .inp ファイルが見つかりませんでした。")
-            return
-
-        # バッチファイルの内容を生成
-        batch_content = [
-            "@echo off",
-            "echo --- PHITS Execution Test Batch File ---",
-            "echo.",
-            f"echo Target Directory: {target_dir}",
-            f"echo PHITS Command:    {phits_command}",
-            "echo.",
-            "echo Press any key to start the first simulation...",
-            "pause > nul",
-            ""
-        ]
-
-        for inp_file in inp_files:
-            base_name = os.path.splitext(inp_file)[0]
-            run_dir = os.path.join(target_dir, f"run_{base_name}")
-            
-            batch_content.append(f"echo --- Running for {inp_file} ---")
-            batch_content.append(f'if not exist "{run_dir}" mkdir "{run_dir}"')
-            batch_content.append(f'copy "{os.path.join(target_dir, inp_file)}" "{os.path.join(run_dir, "input.inp")}"')
-            # 1021.pyを参考に、より堅牢なコマンド実行方法に変更
-            batch_content.append(f'cd /d "{run_dir}"')
-            batch_content.append(f"{phits_command} input.inp")
-            batch_content.append("echo Execution finished. Check this window for errors.")
-            batch_content.append("echo Press any key to continue to the next step...")
-            batch_content.append("pause > nul")
-            batch_content.append("")
-
-        batch_content.append("echo --- All tests finished. ---")
-        batch_content.append("pause")
-
-        # バッチファイルを保存
-        batch_path = os.path.join(target_dir, "_run_phits_test.bat")
-        try:
-            with open(batch_path, "w", encoding="cp932") as f:
-                f.write("\n".join(batch_content))
-            
-            msg = (f"デバッグ用のバッチファイルを生成しました:\n"
-                   f"{batch_path}\n\n"
-                   f"【確認手順】\n"
-                   f"1. 上記ファイルをエクスプローラーで開いてください。\n"
-                   f"2. 「_run_phits_test.bat」をダブルクリックして実行してください。\n"
-                   f"3. 黒い画面が表示され、キーを押すごとに1ステップずつPHITSが実行されます。\n\n"
-                   f"もしエラーメッセージが表示されたら、その内容を教えてください。")
-            messagebox.showinfo("デバッグファイル生成完了", msg)
-            self.log("デバッグ用バッチファイルを生成しました。")
-
-        except Exception as e:
-            messagebox.showerror("生成エラー", f"バッチファイルの生成に失敗しました: {e}")
-            self.log(f"デバッグ用バッチファイルの生成に失敗: {e}")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
         app = MainApplication()
         app.mainloop()
