@@ -24,6 +24,7 @@ from phits_handler import (generate_environment_input_file,
 from route_calculator import find_optimal_route, compute_detailed_path_points, resample_path_by_width
 from utils import get_physical_coords
 import visualizer
+from results_exporter import generate_results_csv
 
 # ★デバッグ用のフラグ
 _app_instance_count = 0
@@ -48,6 +49,7 @@ class MainApplication(tk.Tk):
         self.route_colors = ['red', 'blue', 'green', 'purple', 'orange', 'cyan', 'magenta', 'brown', 'pink', 'gray']
         self.log_queue = Queue()
         self.result_queue = Queue() # ★結果受け渡し用のキューを追加
+        self.latest_results = None # ★最新の結果を保持する変数
 
         # --- 2. メインレイアウトの作成 ---
         # 全体を上下に分割するPanedWindow
@@ -75,6 +77,7 @@ class MainApplication(tk.Tk):
             "delete_route": self.delete_route,
             "visualize_routes": self.visualize_routes,
             "run_phits_and_plot": self.run_phits_and_plot_threaded,
+            "save_results_csv": self.save_results_csv,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
         main_paned.add(self.sim_controls_view, width=300)
@@ -108,6 +111,8 @@ class MainApplication(tk.Tk):
                      messagebox.showinfo("完了", "処理が完了しましたが、プロットできる有効なデータがありませんでした。")
                 else:
                     self.log("全経路の処理が完了しました。結果をプロットします。")
+                    self.latest_results = result # ★結果をインスタンス変数に保持
+                    self.sim_controls_view.save_csv_button.config(state="normal") # ★ボタンを有効化
                     
                     # --- 合計線量のサマリを作成 ---
                     summary_lines = ["\n--- 合計線量 結果サマリ ---"]
@@ -387,6 +392,41 @@ class MainApplication(tk.Tk):
         sources = self.find_source_points()
         visualizer.visualize_routes_2d(self.routes, sources)
         self.log("2D可視化ウィンドウを表示しました。")
+
+    def save_results_csv(self):
+        """シミュレーション結果をCSVファイルに保存する。"""
+        self.log("CSVファイルへの結果保存処理を開始します...")
+        if not self.latest_results:
+            messagebox.showwarning("保存エラー", "保存対象のシミュレーション結果がありません。")
+            self.log("エラー: 保存対象の結果がありませんでした。")
+            return
+
+        # ファイル保存ダイアログを表示
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV (Comma Separated Values)", "*.csv"), ("All Files", "*.*")],
+            initialfile="phits_dose_results.csv",
+            title="シミュレーション結果をCSV形式で保存"
+        )
+
+        if not filepath:
+            self.log("CSV保存がユーザーによってキャンセルされました。")
+            return
+
+        try:
+            # CSVデータを生成
+            csv_data = generate_results_csv(self.latest_results, self.routes)
+            
+            # ファイルに書き込み
+            with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
+                f.write(csv_data)
+            
+            self.log(f"結果をCSVファイルに正常に保存しました: {filepath}")
+            messagebox.showinfo("保存成功", f"結果をCSVファイルに保存しました。\n{filepath}")
+
+        except Exception as e:
+            self.log(f"CSVファイルの保存中にエラーが発生しました: {e}")
+            messagebox.showerror("保存エラー", f"CSVファイルの保存中にエラーが発生しました:\n{e}")
 
     # ==========================================================================
     #  ヘルパー関数

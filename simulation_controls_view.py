@@ -106,6 +106,16 @@ class SimulationControlsView(tk.Frame):
         debug_button_frame.pack(fill=tk.X, padx=5, pady=4)
         
         ttk.Button(debug_button_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=28).pack(fill=tk.X, pady=2)
+        
+        # --- 結果保存フレーム ---
+        save_frame = ttk.LabelFrame(frame, text="結果の保存")
+        save_frame.pack(fill=tk.X, padx=5, pady=(10, 5), anchor=tk.E)
+        
+        save_button_frame = ttk.Frame(save_frame)
+        save_button_frame.pack(fill=tk.X, padx=5, pady=4)
+
+        self.save_csv_button = ttk.Button(save_button_frame, text="結果をCSV形式で保存", command=self.callbacks["save_results_csv"], width=28, state="disabled")
+        self.save_csv_button.pack(fill=tk.X, pady=2)
 
         return frame
 

@@ -13,7 +13,7 @@ Detailed Dose Calculation at a specific point on the route
    11  rpp -5. 5. -5. 5. -5. 5.  $ Robot Body (Cube)
 
 [ C e l l ]
-  {detector_cell_id}  1  -1.0   -11   trcl=1  $ Robot at ({det_x}, {det_y}, {det_z})
+  {detector_cell_id}  1  -7.874   -11   trcl=1  $ Robot at ({det_x}, {det_y}, {det_z})
 
 [ V o l u m e ] 
   non      non      vol      non      reg  $ Detector Volume
