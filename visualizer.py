@@ -111,12 +111,9 @@ def visualize_routes_3d(routes, sources):
         # inv_transform が None を返し、マウス移動時などに TypeError を投げることがある。
         # そのため 0 にならないよう小さな値でパディングする。
         eps = 1e-6
-        if range_x <= 0:
-            range_x = eps
-        if range_y <= 0:
-            range_y = eps
-        if range_z <= 0:
-            range_z = eps
+        if range_x <= 0: range_x = eps
+        if range_y <= 0: range_y = eps
+        if range_z <= 0: range_z = eps
         try:
             ax.set_box_aspect([range_x, range_y, range_z]) # For matplotlib 3.1+
         except Exception:
@@ -196,7 +193,6 @@ def visualize_routes_2d(routes, sources):
 def plot_dose_profile(results, routes):
     """
     各経路の詳細な線量プロファイルを1つのグラフにまとめてプロットする。
-    その後、合計線量の比較グラフを表示する。
     """
     set_japanese_font()
     
@@ -234,46 +230,8 @@ def plot_dose_profile(results, routes):
         ax.legend(prop=_font_prop)
         ax.grid(True, which="both", ls="--")
         plt.tight_layout()
-        plt.show(block=False) # 最初のプロットはブロックしない
-
-    # 2. 合計線量比較プロット
-    plot_total_dose_comparison(results)
-
-
-def plot_total_dose_comparison(results):
-    """
-    全経路の合計線量を棒グラフで比較して表示する。
-    """
-    set_japanese_font()
-
-    route_names = list(results.keys())
-    total_doses = [res.get("total_dose", 0.0) for res in results.values()]
-
-    if not any(total_doses):
-        print("警告: 比較プロットする合計線量データがありません。")
-        return
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    colors = plt.cm.viridis([i/len(route_names) for i in range(len(route_names))])
-    
-    bars = ax.bar(route_names, total_doses, color=colors)
-
-    ax.set_ylabel("合計線量 [Gy/source]", fontproperties=_font_prop)
-    ax.set_title("経路ごとの合計線量の比較", fontproperties=_font_prop)
-    ax.set_xticks(range(len(route_names)))
-    ax.set_xticklabels(route_names, rotation=45, ha="right", fontproperties=_font_prop)
-    
-    # Y軸を対数スケールに設定
-    ax.set_yscale('log')
-    ax.grid(True, which="both", ls="--", axis='y')
-
-    # 各バーの上に数値を表示
-    for bar in bars:
-        yval = bar.get_height()
-        if yval > 0:
-            ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2e}', va='bottom', ha='center', fontproperties=_font_prop)
-
-    plt.tight_layout()
-    plt.show()
+        plt.show() # グラフが閉じられるまでここでブロック
+    else:
+        # プロットするデータがなかった場合、不要なウィンドウを閉じる
+        plt.close(fig)
 

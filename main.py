@@ -108,8 +108,26 @@ class MainApplication(tk.Tk):
                      messagebox.showinfo("完了", "処理が完了しましたが、プロットできる有効なデータがありませんでした。")
                 else:
                     self.log("全経路の処理が完了しました。結果をプロットします。")
+                    
+                    # --- 合計線量のサマリを作成 ---
+                    summary_lines = ["\n--- 合計線量 結果サマリ ---"]
+                    total_dose_summary = ""
+                    # 合計線量が小さい順にソートして表示
+                    sorted_results = sorted(result.items(), key=lambda item: item[1].get('total_dose', float('inf')))
+                    
+                    for route_name, res_data in sorted_results:
+                        total_dose = res_data.get("total_dose", 0.0)
+                        summary_line = f"  - {route_name}: {total_dose:.4e} Gy/source"
+                        summary_lines.append(summary_line)
+
+                    # ログに出力
+                    self.log("\n".join(summary_lines))
+                    
+                    # 詳細プロットを表示
                     visualizer.plot_dose_profile(result, self.routes)
-                    messagebox.showinfo("成功", "PHITSの一括実行と結果のプロットが完了しました。")
+                    
+                    # メッセージボックスにもサマリを表示
+                    messagebox.showinfo("成功", "PHITSの一括実行と結果のプロットが完了しました。\n\n" + "\n".join(summary_lines))
             
             # 2. 環境シミュレーションの結果 (タプル型)
             elif isinstance(result, tuple) and result[0] == "env_sim_result":
