@@ -634,24 +634,99 @@ def execute_phits_simulation(inp_path, phits_command="phits.bat", expected_outpu
     except Exception as e:
         return False, f"PHITS実行中に予期せぬエラーが発生しました ({base_name}): {e}"
 
+def calculate_total_dose(doses):
+    """
+    線量リストを受け取り、合計線量を計算して返す。
+    """
+    if not doses:
+        return 0.0
+    return sum(doses)
+
+
 def extract_dose_from_deposit(run_dir):
     """
-    実行ディレクトリ内の deposit.out から線量を取得する。
+    実行ディレクトリ内の deposit.out から線量データを抽出し、
+    線量のリストとエラーメッセージを返す。
+    mesh=reg形式のテーブル、'total'サマリ行、環境マップ形式など複数の形式に対応する。
+    失敗した場合、デバッグのためにファイルの内容をエラーメッセージに含める。
     """
-    deposit_path = os.path.join(run_dir, "deposit.out")
-    if not os.path.exists(deposit_path):
-        return None, f"deposit.outが見つかりません: {run_dir}"
+    deposit_file = os.path.join(run_dir, 'deposit.out')
+    
+    if not os.path.exists(deposit_file):
+        return None, f"deposit.out が見つかりません: {deposit_file}"
+
+    lines = []
+    try:
+        with open(deposit_file, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+    except Exception as e:
+        return None, f"deposit.out の読み込み中にエラーが発生しました: {e}"
 
     try:
-        with open(deposit_path, "r", encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                # regメッシュの場合、"sum over"を含む行から値を取得
-                if "sum over" in line:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        return float(parts[-2]), None # 線量値を返す
-        return None, "deposit.out内に線量情報が見つかりません。"
-    except (ValueError, IndexError) as e:
-        return None, f"線量のパースに失敗: {e}"
+        # --- 新・最終戦略: mesh=reg の結果テーブルを正確にパース ---
+        data_header_found = False
+        for line in lines:
+            normalized_line = line.strip()
+            # ヘッダー行を探す (例: "#  num   reg    volume     all       r.err")
+            if normalized_line.startswith('#') and all(kw in normalized_line for kw in ['num', 'reg', 'volume', 'all']):
+                data_header_found = True
+                continue  # データは次の行にある
+
+            # ヘッダーが直前の行で見つかっていたら、この行がデータのはず
+            if data_header_found:
+                # データ行はコメントではない
+                if not normalized_line.startswith('#'):
+                    parts = normalized_line.split()
+                    if len(parts) >= 4:
+                        try:
+                            # 4列目が 'all' (total dose) の値
+                            dose_val = float(parts[3])
+                            return [dose_val], None # ★★★ 成功 ★★★
+                        except (ValueError, IndexError):
+                            # データ行の形式が予期せぬものだった場合、ループを抜けてフォールバックへ
+                            break 
+                # データ行でなかった場合、この戦略は終了してフォールバックへ
+                break
+        
+        # --- フォールバック戦略1: 'total' サマリ行を探す ---
+        for line in reversed(lines):
+            if line.strip().lower().startswith('total'):
+                parts = line.strip().split()
+                if len(parts) >= 2 and re.match(r'^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$', parts[1]):
+                    return [float(parts[1])], None
+
+        # --- フォールバック戦略2: 環境マップ形式 (z(cm)ヘッダー) ---
+        doses = []
+        data_started = False
+        for line in lines:
+            if "z(cm)" in line and "total" in line:
+                data_started = True
+                continue
+            if not data_started: continue
+            
+            parts = line.strip().split()
+            if len(parts) >= 4 and re.match(r'^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$', parts[3]):
+                doses.append(float(parts[3]))
+        
+        if doses:
+            return doses, None
+
+        # --- 全ての戦略で失敗した場合 ---
+        file_content_preview_first = "".join(lines[:30])
+        file_content_preview_last = "".join(lines[-30:])
+        error_msg = (
+            "deposit.out 内に有効な線量データが見つかりませんでした。\n"
+            f"--- File Content Preview (first 30 lines) ---\n{file_content_preview_first}\n"
+            f"--- File Content Preview (last 30 lines) ---\n{file_content_preview_last}\n--------------------------------------------"
+        )
+        return None, error_msg
+
     except Exception as e:
-        return None, f"deposit.outの読み込みエラー: {e}"
+        import traceback
+        file_content_preview = "".join(lines[:50])
+        error_msg = (
+            f"deposit.out の解析中に予期せぬエラーが発生しました: {e}\n"
+            f"{traceback.format_exc()}\n"
+            f"--- File Content Preview (first 50 lines) ---\n{file_content_preview}\n--------------------------------------------"
+        )
+        return None, error_msg

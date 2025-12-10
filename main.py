@@ -491,17 +491,31 @@ class MainApplication(tk.Tk):
                 self.log(log_msg)
 
                 # 線量抽出
-                dose, error = extract_dose_from_deposit(run_dir)
+                doses, error = extract_dose_from_deposit(run_dir)
                 if error:
                     extract_error_msg = f"線量抽出エラー ({os.path.basename(run_dir)}):\n{error}"
                     self.log(extract_error_msg)
                     self.result_queue.put(extract_error_msg)
                     return # 処理を中断
                 
-                doses_for_route.append(dose)
-                self.log(f"  -> 抽出された線量: {dose:.4e} Gy/source")
+                # 抽出した線量リストから最初の値（通常は1つしかない）を取得
+                if doses:
+                    dose = doses[0]
+                    doses_for_route.append(dose)
+                    self.log(f"  -> 抽出された線量: {dose:.4e} Gy/source")
+                else:
+                    self.log(f"  -> 警告: {os.path.basename(run_dir)} から線量を抽出できませんでした。")
+
+            # 合計線量を計算
+            total_dose = sum(doses_for_route)
+            self.log(f"--- {route_name} の合計線量: {total_dose:.4e} Gy/source ---")
+
+            # all_results には詳細な線量リストと合計線量を格納
+            all_results[route_name] = {
+                "doses": doses_for_route,
+                "total_dose": total_dose
+            }
             
-            all_results[route_name] = doses_for_route
             self.log(f"--- {route_name} の処理が正常に完了 ---")
 
         # 5. 全ての処理が完了したら、結果をプロットキューに入れる

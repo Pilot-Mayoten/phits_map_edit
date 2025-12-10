@@ -193,41 +193,87 @@ def visualize_routes_2d(routes, sources):
     plt.show()
 
 
-def plot_dose_profile(route_results, routes_data):
+def plot_dose_profile(results, routes):
     """
-    複数の経路の線量プロファイルを1つのグラフにプロットする。
-    route_results: { "route_1": [dose1, ...], ... }
-    routes_data: self.routes のリスト
+    各経路の詳細な線量プロファイルを1つのグラフにまとめてプロットする。
+    その後、合計線量の比較グラフを表示する。
     """
     set_japanese_font()
-    plt.style.use('seaborn-v0_8-whitegrid')
+    
     fig, ax = plt.subplots(figsize=(12, 7))
-
-    # route_resultsのキー（"route_1"など）からインデックスを取得
-    for route_key, doses in route_results.items():
-        try:
-            route_index = int(route_key.split('_')[-1]) - 1
-            route_info = routes_data[route_index]
-            color = route_info.get('color', 'gray')
-            label = f"Route {route_index + 1}"
-        except (ValueError, IndexError):
-            color = 'gray'
-            label = route_key
-
-        steps = range(1, len(doses) + 1)
-        ax.plot(steps, doses, marker='o', linestyle='-', label=label, color=color)
     
-    ax.set_xlabel("評価ステップ数", fontsize=12, fontproperties=_font_prop)
-    ax.set_ylabel("吸収線量 [Gy/source]", fontsize=12, fontproperties=_font_prop)
-    ax.set_title("各経路のステップごとの線量プロファイル", fontsize=16, fontproperties=_font_prop)
-    
-    legend = ax.legend()
-    for text in legend.get_texts():
-        text.set_font_properties(_font_prop)
+    has_data_to_plot = False
+
+    # 1. 詳細線量プロット
+    for i, (route_name, result_data) in enumerate(results.items()):
+        doses = result_data.get("doses", [])
+        if not doses:
+            continue
         
-    ax.set_yscale('log')
-    ax.grid(True, which="both", ls="--", c='0.7')
+        has_data_to_plot = True
+        
+        # 対応する経路情報を見つける
+        route_info = next((r for r in routes if f"route_{routes.index(r)+1}" == route_name), None)
+        if not route_info or "step_width" not in route_info:
+            distances = list(range(len(doses)))
+            xlabel = "評価点インデックス"
+        else:
+            step_width = route_info["step_width"]
+            distances = [j * step_width for j in range(len(doses))]
+            xlabel = "経路に沿った距離 [cm]"
+
+        color = route_info.get('color', 'gray') if route_info else plt.cm.viridis(i / len(results))
+
+        ax.plot(distances, doses, marker='o', linestyle='-', label=f"{route_name}", color=color)
+
+    if has_data_to_plot:
+        ax.set_xlabel(xlabel, fontproperties=_font_prop)
+        ax.set_ylabel("線量 [Gy/source]", fontproperties=_font_prop)
+        ax.set_title("経路上の線量プロファイル", fontproperties=_font_prop)
+        ax.set_yscale('log')
+        ax.legend(prop=_font_prop)
+        ax.grid(True, which="both", ls="--")
+        plt.tight_layout()
+        plt.show(block=False) # 最初のプロットはブロックしない
+
+    # 2. 合計線量比較プロット
+    plot_total_dose_comparison(results)
+
+
+def plot_total_dose_comparison(results):
+    """
+    全経路の合計線量を棒グラフで比較して表示する。
+    """
+    set_japanese_font()
+
+    route_names = list(results.keys())
+    total_doses = [res.get("total_dose", 0.0) for res in results.values()]
+
+    if not any(total_doses):
+        print("警告: 比較プロットする合計線量データがありません。")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 6))
     
+    colors = plt.cm.viridis([i/len(route_names) for i in range(len(route_names))])
+    
+    bars = ax.bar(route_names, total_doses, color=colors)
+
+    ax.set_ylabel("合計線量 [Gy/source]", fontproperties=_font_prop)
+    ax.set_title("経路ごとの合計線量の比較", fontproperties=_font_prop)
+    ax.set_xticks(range(len(route_names)))
+    ax.set_xticklabels(route_names, rotation=45, ha="right", fontproperties=_font_prop)
+    
+    # Y軸を対数スケールに設定
+    ax.set_yscale('log')
+    ax.grid(True, which="both", ls="--", axis='y')
+
+    # 各バーの上に数値を表示
+    for bar in bars:
+        yval = bar.get_height()
+        if yval > 0:
+            ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2e}', va='bottom', ha='center', fontproperties=_font_prop)
+
     plt.tight_layout()
     plt.show()
 
