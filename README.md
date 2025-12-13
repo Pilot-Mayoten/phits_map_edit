@@ -185,3 +185,10 @@ GitHubへの安全なアクセスのため、SSHキーの設定を推奨しま�
     ssh -T git@github.com
     ```
     -   `Hi Pilot-Mayoten! You've successfully authenticated...` というメッセージが表示されれば成功です。
+
+## コードの呼び出しフロー
+
+詳細な関数・ファイル間の呼び出し関係は `CODE_FLOW.md` にまとめています。開発や拡張を行う際はこちらを参照してください。
+
+ファイル: `CODE_FLOW.md`
+
