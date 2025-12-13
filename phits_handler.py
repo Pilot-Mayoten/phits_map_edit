@@ -14,19 +14,29 @@ from tkinter import filedialog, messagebox
 from app_config import (MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y, 
                         CELL_HEIGHT_Z, WORLD_MARGIN)
 from utils import get_physical_coords
+from config_loader import get_config
 
-def generate_environment_input_file(map_data, nuclide="Cs-137", activity=1.0E+12):
+def generate_environment_input_file(map_data, nuclide=None, activity=None):
     """
     現在のマップデータから、環境定義用のPHITS入力ファイル文字列を生成し、
     ファイル保存ダイアログを表示して保存する。
     """
+    config = get_config()
+    if nuclide is None:
+        nuclide = config.get_default_nuclide()
+    if activity is None:
+        activity = config.get_default_activity()
+    
+    maxcas = config.get_default_maxcas()
+    maxbch = config.get_default_maxbch()
+    
     phits_input_lines = [
         "[ T i t l e ]",
         "Environment Definition for Dose Map Calculation",
         "\n",
         "[ P a r a m e t e r s ]",
-        "   maxcas   = 10000",
-        "   maxbch   = 10",
+        f"   maxcas   = {maxcas}",
+        f"   maxbch   = {maxbch}",
         "\n",
         "[ M a t e r i a l ]",
         "  mat[1]   N 8 O 2         $ Air",

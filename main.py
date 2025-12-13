@@ -25,6 +25,7 @@ from route_calculator import find_optimal_route, compute_detailed_path_points, r
 from utils import get_physical_coords
 import visualizer
 from results_exporter import generate_results_csv
+from config_loader import get_config
 
 # ★デバッグ用のフラグ
 _app_instance_count = 0
@@ -38,8 +39,9 @@ class MainApplication(tk.Tk):
             messagebox.showwarning("多重起動警告", "MainApplicationのインスタンスが複数作成されました。予期せぬ動作の原因となります。")
 
         super().__init__()
-        self.title("🗺️ PHITS Map Editor & Route Planner")
-        self.geometry("1600x1080") # Windowの高さを拡大
+        config = get_config()
+        self.title(config.get_app_title())
+        self.geometry(f"{config.get_window_width()}x{config.get_window_height()}")
 
         # --- 1. 内部データの初期化 ---
         self.map_data = [[CELL_TYPES["床 (通行可)"][0] for _ in range(MAP_COLS)] 
@@ -62,10 +64,11 @@ class MainApplication(tk.Tk):
 
 
         # --- 3. GUIモジュールのインスタンス化 ---
+        config = get_config()
         self.map_editor_view = MapEditorView(main_paned, 
                                              self.on_cell_click,
                                              self.on_cell_hover)
-        main_paned.add(self.map_editor_view, width=1050)
+        main_paned.add(self.map_editor_view, width=config.get_grid_width())
         main_paned.paneconfigure(self.map_editor_view, minsize=900)
         
         callbacks = {
@@ -80,7 +83,7 @@ class MainApplication(tk.Tk):
             "save_results_csv": self.save_results_csv,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
-        main_paned.add(self.sim_controls_view, width=300)
+        main_paned.add(self.sim_controls_view, width=config.get_control_panel_width())
         main_paned.paneconfigure(self.sim_controls_view, minsize=250)
 
         # 下半分（ログ表示エリア）
@@ -234,15 +237,16 @@ class MainApplication(tk.Tk):
     def generate_env_map(self):
         """環境入力ファイル(env_input.inp)を生成する際に、核種と放射能をユーザーに聞く。"""
         self.log("環境入力ファイルの生成を開始します...")
+        config = get_config()
         
         # ダイアログで核種を聞く
-        nuclide = simpledialog.askstring("環境設定", "核種を入力してください（例：Cs-137）:", initialvalue="Cs-137")
+        nuclide = simpledialog.askstring("環境設定", "核種を入力してください（例：Cs-137）:", initialvalue=config.get_default_nuclide())
         if not nuclide:
             self.log("核種が入力されなかったため、処理を中断しました。")
             return
         
         # ダイアログで放射能を聞く
-        activity_str = simpledialog.askstring("環境設定", "放射能（Bq）を入力してください（例：1.0E+12）:", initialvalue="1.0E+12")
+        activity_str = simpledialog.askstring("環境設定", "放射能（Bq）を入力してください（例：1.0E+12）:", initialvalue=config.get_default_activity())
         if not activity_str:
             self.log("放射能が入力されなかったため、処理を中断しました。")
             return
@@ -354,11 +358,12 @@ class MainApplication(tk.Tk):
         self.log(f"出力先フォルダ: {output_dir}")
 
         # ユーザに maxcas / maxbch の値を問い合わせ（キャンセルで中断）
-        maxcas_str = simpledialog.askstring("詳細評価設定", "maxcas を入力してください:", initialvalue="10000")
+        config = get_config()
+        maxcas_str = simpledialog.askstring("詳細評価設定", "maxcas を入力してください:", initialvalue=str(config.get_default_maxcas()))
         if maxcas_str is None:
             self.log("ユーザが maxcas の入力をキャンセルしました。")
             return
-        maxbch_str = simpledialog.askstring("詳細評価設定", "maxbch を入力してください:", initialvalue="10")
+        maxbch_str = simpledialog.askstring("詳細評価設定", "maxbch を入力してください:", initialvalue=str(config.get_default_maxbch()))
         if maxbch_str is None:
             self.log("ユーザが maxbch の入力をキャンセルしました。")
             return
@@ -476,8 +481,8 @@ class MainApplication(tk.Tk):
         「4. 詳細線量評価」で生成済みの入力ファイル群を元に、PHITSを実行し、結果をプロットする。
         """
         self.log("PHITS一括実行と結果プロット処理を開始します...")
-
-        phits_command = self.sim_controls_view.get_phits_command()
+        config = get_config()
+        phits_command = config.get_phits_command()
         if not phits_command:
             self.result_queue.put("PHITS実行コマンドが設定されていません。")
             return
