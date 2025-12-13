@@ -10,6 +10,7 @@ from mpl_toolkits.mplot3d import Axes3D
 
 import matplotlib.font_manager as fm
 from pathlib import Path
+from config_loader import get_config
 
 _japanese_font_found = False
 _font_prop = None
@@ -17,7 +18,7 @@ _font_prop = None
 def set_japanese_font():
     """
     日本語対応フォントをmatplotlibに設定する。
-    システムにインストールされている日本語フォントを探し、最初に見つかったものを利用する。
+    設定ファイルから指定されたディレクトリ内の日本語フォントを探し、最初に見つかったものを利用する。
     """
     global _japanese_font_found, _font_prop
     if _japanese_font_found:
@@ -25,8 +26,9 @@ def set_japanese_font():
             plt.rcParams['font.family'] = _font_prop.get_name()
         return
 
-    font_dir = Path("C:/Windows/Fonts")
-    font_files = ["meiryo.ttc", "msgothic.ttc", "yugothb.ttc"]
+    config = get_config()
+    font_dir = Path(config.get_font_directory())
+    font_files = config.get_font_files()
     
     found_font_path = None
     for font_file in font_files:
@@ -39,11 +41,9 @@ def set_japanese_font():
         _font_prop = fm.FontProperties(fname=found_font_path)
         plt.rcParams['font.family'] = _font_prop.get_name()
         _japanese_font_found = True
-        print(f"日本語フォント '{_font_prop.get_name()}' ({found_font_path}) を設定しました。")
+        print(f"Japanese font '{_font_prop.get_name()}' ({found_font_path}) was set.")
     else:
-        print("警告: 日本語フォントが見つかりませんでした。グラフの文字化けが発生する可能性があります。")
-        # デフォルトの sans-serif ファミリーを使う
-        plt.rcParams['font.family'] = plt.rcParams['font.sans-serif']
+        print("Warning: Japanese font not found. Text in graphs may be garbled.")
 
 def visualize_routes_3d(routes, sources):
     """
