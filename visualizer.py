@@ -76,27 +76,30 @@ def visualize_routes_3d(routes, sources):
         xs = [p[0] for p in path]
         ys = [p[1] for p in path]
         zs = [p[2] for p in path]
-        ax.plot(xs, ys, zs, marker='.', linestyle='-', color=color, label=f"Route {idx+1}")
+        ax.plot(xs, ys, zs, marker='o', markersize=6, linestyle='-', linewidth=2.5, color=color, label=f"Route {idx+1}")
         
     # 線源をプロット (引数から受け取る)
     if sources:
         sx = [s[0] for s in sources]
         sy = [s[1] for s in sources]
         sz = [s[2] for s in sources]
-        ax.scatter(sx, sy, sz, color='red', marker='*', s=200, edgecolors='black', label="Sources")
+        ax.scatter(sx, sy, sz, color='red', marker='*', s=600, edgecolors='black', linewidths=2, label="Sources")
 
-    ax.set_xlabel("X-axis [cm]", fontproperties=_font_prop)
-    ax.set_ylabel("Y-axis [cm]", fontproperties=_font_prop)
-    ax.set_zlabel("Z-axis [cm]", fontproperties=_font_prop)
-    ax.set_title("3D Visualization of Routes and Source Locations", fontproperties=_font_prop)
+    ax.set_xlabel("X-axis [cm]", fontproperties=_font_prop, fontsize=14)
+    ax.set_ylabel("Y-axis [cm]", fontproperties=_font_prop, fontsize=14)
+    ax.set_zlabel("Z-axis [cm]", fontproperties=_font_prop, fontsize=14)
+    ax.set_title("3D Visualization of Routes and Source Locations", fontproperties=_font_prop, fontsize=16)
+    
+    # 軸の目盛りラベルのサイズを大きく
+    ax.tick_params(axis='both', which='major', labelsize=12)
     
     # 凡例のフォントも設定
-    legend = ax.legend()
+    legend = ax.legend(fontsize=13)
     for text in legend.get_texts():
         text.set_font_properties(_font_prop)
     
     # グリッド表示
-    ax.grid(True)
+    ax.grid(True, alpha=0.3)
     
     # アスペクト比を調整（データ範囲に基づいて設定）
     all_x = [p[0] for r in routes for p in r.get("detailed_path", [])] + [s[0] for s in sources]
@@ -124,9 +127,9 @@ def visualize_routes_3d(routes, sources):
     plt.show()
 
 
-def visualize_routes_2d(routes, sources):
+def visualize_routes_2d(routes, sources, map_data=None):
     """
-    登録されたすべての経路と線源を2Dのトップダウン（X-Y平面）で可視化する。
+    登録されたすべての経路、線源、障害物を2Dのトップダウン（X-Y平面）で可視化する。
     経路ごとに色分けして表示する。
     """
     set_japanese_font()
@@ -135,6 +138,20 @@ def visualize_routes_2d(routes, sources):
         return
 
     fig, ax = plt.subplots(figsize=(10, 8))
+
+    # 障害物（壁）を描画
+    if map_data is not None:
+        from app_config import MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y
+        from utils import get_physical_coords
+        
+        for r in range(MAP_ROWS):
+            for c in range(MAP_COLS):
+                if map_data[r][c] == 1:  # 壁
+                    x_min, x_max, y_min, y_max, _, _ = get_physical_coords(r, c)
+                    rect = plt.Rectangle((x_min, y_min), x_max - x_min, y_max - y_min,
+                                        facecolor='gray', edgecolor='black', 
+                                        alpha=0.6, linewidth=1, zorder=1)
+                    ax.add_patch(rect)
 
     all_x = []
     all_y = []
@@ -147,44 +164,58 @@ def visualize_routes_2d(routes, sources):
         color = route.get('color', 'gray')
         xs = [p[0] for p in path]
         ys = [p[1] for p in path]
-        ax.plot(xs, ys, marker='.', linestyle='-', color=color, label=f"Route {idx+1}")
+        ax.plot(xs, ys, marker='o', markersize=12, linestyle='-', linewidth=4, color=color, label=f"Route {idx+1}")
         all_x.extend(xs)
         all_y.extend(ys)
         
         # 始点と終点を強調
-        ax.scatter(xs[0], ys[0], color=color, marker='^', s=150, edgecolors='black') # Start
-        ax.scatter(xs[-1], ys[-1], color=color, marker='s', s=150, edgecolors='black') # Goal
+        ax.scatter(xs[0], ys[0], color=color, marker='^', s=600, edgecolors='black', linewidths=2.4, zorder=5) # Start
+        ax.scatter(xs[-1], ys[-1], color=color, marker='s', s=600, edgecolors='black', linewidths=2.4, zorder=5) # Goal
 
     # 線源をプロット (Zは無視してXY投影)
     if sources:
         sx = [s[0] for s in sources]
         sy = [s[1] for s in sources]
-        ax.scatter(sx, sy, color='yellow', marker='*', s=300, edgecolors='black', label='Sources')
+        ax.scatter(sx, sy, color='yellow', marker='*', s=1000, edgecolors='black', linewidths=3, label='Sources', zorder=5)
         all_x.extend(sx)
         all_y.extend(sy)
 
-    ax.set_xlabel("X-axis [cm]", fontproperties=_font_prop)
-    ax.set_ylabel("Y-axis [cm]", fontproperties=_font_prop)
-    ax.set_title("2D Visualization (Top-Down) of Routes and Source Locations", fontproperties=_font_prop)
+    ax.set_xlabel("X-axis [cm]", fontproperties=_font_prop, fontsize=20)
+    ax.set_ylabel("Y-axis [cm]", fontproperties=_font_prop, fontsize=20)
+    ax.set_title("2D Visualization (Top-Down) of Routes and Source Locations", fontproperties=_font_prop, fontsize=26)
     
-    legend = ax.legend()
+    # 軸の目盛りラベルのサイズを大きく
+    ax.tick_params(axis='both', which='major', labelsize=18, width=1.4)
+    ax.minorticks_on()
+    ax.tick_params(axis='both', which='minor', labelsize=16)
+    
+    legend = ax.legend(fontsize=18, loc='best')
     for text in legend.get_texts():
         text.set_font_properties(_font_prop)
         
-    ax.grid(True)
+    ax.grid(True, alpha=0.35, linewidth=1.6)
 
-    # 軸範囲とアスペクト調整
-    if all_x and all_y:
-        min_x, max_x = min(all_x), max(all_x)
-        min_y, max_y = min(all_y), max(all_y)
-        pad_x = (max_x - min_x) * 0.1 if max_x > min_x else 1
-        pad_y = (max_y - min_y) * 0.1 if max_y > min_y else 1
-        ax.set_xlim(min_x - pad_x, max_x + pad_x)
-        ax.set_ylim(min_y - pad_y, max_y + pad_y)
-        try:
-            ax.set_aspect('equal', adjustable='box')
-        except Exception:
-            pass
+    # 軸範囲をマップ全体に設定
+    if map_data is not None:
+        from app_config import MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y
+        map_width = MAP_COLS * CELL_SIZE_X
+        map_height = MAP_ROWS * CELL_SIZE_Y
+        ax.set_xlim(0, map_width)
+        ax.set_ylim(0, map_height)
+    else:
+        # map_dataがない場合は従来通りデータに基づいて範囲を設定
+        if all_x and all_y:
+            min_x, max_x = min(all_x), max(all_x)
+            min_y, max_y = min(all_y), max(all_y)
+            pad_x = (max_x - min_x) * 0.1 if max_x > min_x else 1
+            pad_y = (max_y - min_y) * 0.1 if max_y > min_y else 1
+            ax.set_xlim(min_x - pad_x, max_x + pad_x)
+            ax.set_ylim(min_y - pad_y, max_y + pad_y)
+    
+    try:
+        ax.set_aspect('equal', adjustable='box')
+    except Exception:
+        pass
 
     plt.tight_layout()
     plt.show()
@@ -220,15 +251,19 @@ def plot_dose_profile(results, routes):
 
         color = route_info.get('color', 'gray') if route_info else plt.cm.viridis(i / len(results))
 
-        ax.plot(distances, doses, marker='o', linestyle='-', label=f"{route_name}", color=color)
+        ax.plot(distances, doses, marker='o', markersize=12, linestyle='-', linewidth=4, label=f"{route_name}", color=color)
 
     if has_data_to_plot:
-        ax.set_xlabel(xlabel, fontproperties=_font_prop)
-        ax.set_ylabel("線量 [Gy/source]", fontproperties=_font_prop)
-        ax.set_title("経路上の線量プロファイル", fontproperties=_font_prop)
+        ax.set_xlabel(xlabel, fontproperties=_font_prop, fontsize=20)
+        ax.set_ylabel("線量 [Gy/source]", fontproperties=_font_prop, fontsize=20)
+        ax.set_title("経路上の線量プロファイル", fontproperties=_font_prop, fontsize=26)
         ax.set_yscale('log')
-        ax.legend(prop=_font_prop)
-        ax.grid(True, which="both", ls="--")
+        ax.tick_params(axis='both', which='major', labelsize=18, width=1.4)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='minor', labelsize=16)
+        ax.legend(prop=_font_prop, fontsize=18, loc='best')
+        ax.grid(True, which="major", ls="--", alpha=0.7, linewidth=1.7)
+        ax.grid(True, which="minor", ls=":", alpha=0.5, linewidth=1.1)
         plt.tight_layout()
         plt.show() # グラフが閉じられるまでここでブロック
     else:
