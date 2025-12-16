@@ -311,6 +311,9 @@ class MainApplication(tk.Tk):
         except (ValueError, TypeError):
             return
 
+        # ★重みを経路に保存
+        target_route["weight"] = weight
+
         a_star_grid_path = find_optimal_route(start_grid, goal_grid, middle_grid, self.map_data, self.dose_map, weight)
         
         if a_star_grid_path:
@@ -397,7 +400,7 @@ class MainApplication(tk.Tk):
              messagebox.showinfo("情報", "詳細経路が未生成の経路は表示されません。\n「3. 最適経路を探索」を実行してください。")
 
         sources = self.find_source_points()
-        visualizer.visualize_routes_2d(self.routes, sources)
+        visualizer.visualize_routes_2d(self.routes, sources, self.map_data)
         self.log("2D可視化ウィンドウを表示しました。")
 
     def save_results_csv(self):
