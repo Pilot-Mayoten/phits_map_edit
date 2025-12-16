@@ -137,12 +137,30 @@ def visualize_routes_2d(routes, sources, map_data=None):
         print("可視化対象の詳細経路がありません。")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # マップデータからマップサイズを取得して、適切な図サイズを計算
+    if map_data is not None:
+        from app_config import MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y
+        map_width = MAP_COLS * CELL_SIZE_X
+        map_height = MAP_ROWS * CELL_SIZE_Y
+        aspect_ratio = map_width / map_height
+        fig_width = max(10, 10 * aspect_ratio)  # 最小幅10、アスペクト比に応じて拡大
+        fig, ax = plt.subplots(figsize=(fig_width, 10))
+    else:
+        fig, ax = plt.subplots(figsize=(10, 8))
 
     # 障害物（壁）を描画
     if map_data is not None:
         from app_config import MAP_ROWS, MAP_COLS, CELL_SIZE_X, CELL_SIZE_Y
         from utils import get_physical_coords
+        
+        # グリッドラインを描画（セル境界）
+        for r in range(MAP_ROWS + 1):
+            y_val = r * CELL_SIZE_Y
+            ax.axhline(y=y_val, color='lightgray', linewidth=0.5, linestyle='--', alpha=0.5, zorder=0)
+        
+        for c in range(MAP_COLS + 1):
+            x_val = c * CELL_SIZE_X
+            ax.axvline(x=x_val, color='lightgray', linewidth=0.5, linestyle='--', alpha=0.5, zorder=0)
         
         for r in range(MAP_ROWS):
             for c in range(MAP_COLS):
@@ -202,6 +220,8 @@ def visualize_routes_2d(routes, sources, map_data=None):
         map_height = MAP_ROWS * CELL_SIZE_Y
         ax.set_xlim(0, map_width)
         ax.set_ylim(0, map_height)
+        # 縮尺が正確に 1:1 となるように設定
+        ax.set_aspect('equal', adjustable='datalim')
     else:
         # map_dataがない場合は従来通りデータに基づいて範囲を設定
         if all_x and all_y:
@@ -211,12 +231,9 @@ def visualize_routes_2d(routes, sources, map_data=None):
             pad_y = (max_y - min_y) * 0.1 if max_y > min_y else 1
             ax.set_xlim(min_x - pad_x, max_x + pad_x)
             ax.set_ylim(min_y - pad_y, max_y + pad_y)
+            ax.set_aspect('equal', adjustable='datalim')
     
-    try:
-        ax.set_aspect('equal', adjustable='box')
-    except Exception:
-        pass
-
+    # 最後に tight_layout を適用
     plt.tight_layout()
     plt.show()
 
