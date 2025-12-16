@@ -65,6 +65,7 @@ class MainApplication(tk.Tk):
         self.map_editor_view = MapEditorView(main_paned, 
                                              self.on_cell_click,
                                              self.on_cell_hover)
+        self.map_editor_view.main_app = self  # ★save/load機能用
         main_paned.add(self.map_editor_view, width=1050)
         main_paned.paneconfigure(self.map_editor_view, minsize=900)
         

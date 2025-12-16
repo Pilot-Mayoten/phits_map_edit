@@ -16,6 +16,7 @@ class MapEditorView(tk.Frame):
         
         self.on_cell_click_callback = on_cell_click_callback
         self.on_hover_callback = on_hover_callback
+        self.main_app = None  # ★main.py からセットされる（save/load用）
 
         self.current_tool = tk.StringVar(value="床 (通行可)")
         
@@ -61,21 +62,27 @@ class MapEditorView(tk.Frame):
         button_frame.pack(pady=15, fill=tk.X)
         
         tk.Button(button_frame, text="マップを保存", 
-                 command=self.on_cell_click_callback.__self__.save_map_dialog,
+                 command=lambda: self.main_app.save_map_dialog() if self.main_app else None,
                  width=12, font=("Meiryo UI", 10), bg="#90EE90").pack(pady=5, padx=5, fill=tk.X)
         tk.Button(button_frame, text="マップを読込", 
-                 command=self.on_cell_click_callback.__self__.load_map_dialog,
+                 command=lambda: self.main_app.load_map_dialog() if self.main_app else None,
                  width=12, font=("Meiryo UI", 10), bg="#87CEEB").pack(pady=5, padx=5, fill=tk.X)
+
+    def create_map_grid(self, parent):
+        # ★grid レイアウト用の内部フレームを作成（parent は pack で管理されているため）
+        grid_frame = tk.Frame(parent)
+        grid_frame.pack(fill=tk.BOTH, expand=True)
+
         # --- X軸ラベル (上部) ---
         for c in range(0, MAP_COLS, 5):
             x_val = c * CELL_SIZE_X
-            lbl = tk.Label(parent, text=f"{x_val:.0f}", font=("Meiryo UI", 9, "bold"), bg="#e0e0e0")
+            lbl = tk.Label(grid_frame, text=f"{x_val:.0f}", font=("Meiryo UI", 9, "bold"), bg="#e0e0e0")
             lbl.grid(row=0, column=c+1, sticky="ew", padx=1, pady=1) 
 
         # --- Y軸ラベル (左側) ---
         for r in range(0, MAP_ROWS, 5):
             y_val = (MAP_ROWS - r) * CELL_SIZE_Y
-            lbl = tk.Label(parent, text=f"{y_val:.0f}", width=5, anchor="e", font=("Meiryo UI", 9, "bold"), bg="#e0e0e0")
+            lbl = tk.Label(grid_frame, text=f"{y_val:.0f}", width=5, anchor="e", font=("Meiryo UI", 9, "bold"), bg="#e0e0e0")
             lbl.grid(row=r+1, column=0, sticky="ns", padx=1, pady=1)
 
         # --- グリッドボタン本体 ---
@@ -83,7 +90,7 @@ class MapEditorView(tk.Frame):
             row_buttons = []
             for c in range(MAP_COLS):
                 btn = tk.Button(
-                    parent,
+                    grid_frame,
                     text="",
                     width=4,
                     height=2,
