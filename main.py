@@ -79,6 +79,8 @@ class MainApplication(tk.Tk):
             "visualize_routes": self.visualize_routes,
             "run_phits_and_plot": self.run_phits_and_plot_threaded,
             "save_results_csv": self.save_results_csv,
+            "show_dose_profile": self.show_dose_profile,
+            "open_csv": self.open_csv_file,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
         main_paned.add(self.sim_controls_view, width=300)
@@ -489,6 +491,41 @@ class MainApplication(tk.Tk):
         
         self.log(f"マップを読み込みました: {filepath}")
         messagebox.showinfo("読み込み成功", f"マップを読み込みました。\n{filepath}")
+
+    def show_dose_profile(self):
+        """最新の線量プロファイルグラフを表示する"""
+        if not self.latest_results:
+            messagebox.showinfo("情報", "表示可能な線量プロファイルデータがありません。\n先に「5. PHITS実行と結果プロット」を実行してください。")
+            self.log("線量プロファイル表示：結果データがありません。")
+            return
+        
+        self.log("線量プロファイルを表示中...")
+        visualizer.plot_dose_profile(self.latest_results, self.routes)
+
+    def open_csv_file(self):
+        """最新の結果CSVファイルをExcelで開く"""
+        if not self.latest_results:
+            messagebox.showinfo("情報", "開くCSVファイルがありません。\n先に「5. PHITS実行と結果プロット」を実行してからCSVを保存してください。")
+            self.log("CSV開く：結果データがありません。")
+            return
+
+        filepath = filedialog.askopenfilename(
+            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+            title="開くCSVファイルを選択"
+        )
+
+        if not filepath:
+            self.log("CSV開く：キャンセルされました。")
+            return
+
+        try:
+            import subprocess
+            # Windows: Excel で開く
+            subprocess.Popen(["start", filepath], shell=True)
+            self.log(f"CSVをExcelで開きました: {filepath}")
+        except Exception as e:
+            self.log(f"CSVファイルを開く際にエラー: {e}")
+            messagebox.showerror("エラー", f"CSVファイルを開けません:\n{e}")
 
     # ==========================================================================
     #  ヘルパー関数

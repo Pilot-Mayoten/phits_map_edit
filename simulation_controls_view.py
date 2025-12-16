@@ -78,6 +78,15 @@ class SimulationControlsView(tk.Frame):
         ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="選択を削除", command=self.callbacks["delete_route"]).pack(side=tk.LEFT, padx=5)
 
+        # --- 結果アクセスボタン ---
+        result_button_frame = ttk.Frame(frame)
+        result_button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0), sticky="ew")
+        
+        ttk.Button(result_button_frame, text="線量プロファイルを表示", 
+                  command=self.callbacks.get("show_dose_profile", lambda: None)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(result_button_frame, text="結果をExcelで開く", 
+                  command=self.callbacks.get("open_csv", lambda: None)).pack(side=tk.LEFT, padx=5)
+
         return frame
 
     def _create_simulation_actions_panel(self, parent):
