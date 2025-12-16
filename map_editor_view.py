@@ -59,14 +59,14 @@ class MapEditorView(tk.Frame):
 
         # --- マップ操作ボタン ---
         button_frame = tk.Frame(parent)
-        button_frame.pack(pady=15, fill=tk.X)
+        button_frame.pack(pady=12, fill=tk.X)
         
         tk.Button(button_frame, text="マップを保存", 
                  command=lambda: self.main_app.save_map_dialog() if self.main_app else None,
-                 width=12, font=("Meiryo UI", 10), bg="#90EE90").pack(pady=5, padx=5, fill=tk.X)
+                 width=14, font=("Meiryo UI", 10), bg="#90EE90", padx=6, pady=6).pack(pady=4, padx=5, fill=tk.X)
         tk.Button(button_frame, text="マップを読込", 
                  command=lambda: self.main_app.load_map_dialog() if self.main_app else None,
-                 width=12, font=("Meiryo UI", 10), bg="#87CEEB").pack(pady=5, padx=5, fill=tk.X)
+                 width=14, font=("Meiryo UI", 10), bg="#87CEEB", padx=6, pady=6).pack(pady=4, padx=5, fill=tk.X)
 
     def create_map_grid(self, parent):
         # ★grid レイアウト用の内部フレームを作成（parent は pack で管理されているため）
