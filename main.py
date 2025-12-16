@@ -438,6 +438,57 @@ class MainApplication(tk.Tk):
             self.log(f"CSVファイルの保存中にエラーが発生しました: {e}")
             messagebox.showerror("保存エラー", f"CSVファイルの保存中にエラーが発生しました:\n{e}")
 
+    def save_map_dialog(self):
+        """マップをJSONファイルとして保存するダイアログを表示"""
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            initialfile="map_layout.json",
+            title="マップを保存"
+        )
+
+        if not filepath:
+            self.log("マップ保存がキャンセルされました。")
+            return
+
+        from utils import save_map_to_json
+        if save_map_to_json(self.map_data, filepath):
+            self.log(f"マップを保存しました: {filepath}")
+            messagebox.showinfo("保存成功", f"マップを保存しました。\n{filepath}")
+        else:
+            self.log(f"マップ保存エラー")
+            messagebox.showerror("保存エラー", "マップ保存中にエラーが発生しました。")
+
+    def load_map_dialog(self):
+        """マップをJSONファイルから読み込むダイアログを表示"""
+        filepath = filedialog.askopenfilename(
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="マップを読み込み"
+        )
+
+        if not filepath:
+            self.log("マップ読み込みがキャンセルされました。")
+            return
+
+        from utils import load_map_from_json
+        loaded_map = load_map_from_json(filepath)
+        if loaded_map is None:
+            self.log(f"マップ読み込みエラー")
+            messagebox.showerror("読み込みエラー", "マップ読み込み中にエラーが発生しました。")
+            return
+
+        # マップデータを更新
+        self.map_data = loaded_map
+        self.dose_map = None  # 線量マップはリセット
+        self.routes = []  # 経路情報もリセット
+
+        # GUI表示を更新
+        self.map_editor_view.refresh_grid(self.map_data)
+        self.sim_controls_view.update_route_tree(self.routes)
+        
+        self.log(f"マップを読み込みました: {filepath}")
+        messagebox.showinfo("読み込み成功", f"マップを読み込みました。\n{filepath}")
+
     # ==========================================================================
     #  ヘルパー関数
     # ==========================================================================

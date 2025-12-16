@@ -56,7 +56,16 @@ class MapEditorView(tk.Frame):
             )
             rb.pack(pady=5, padx=10, fill=tk.X)
 
-    def create_map_grid(self, parent):
+        # --- マップ操作ボタン ---
+        button_frame = tk.Frame(parent)
+        button_frame.pack(pady=15, fill=tk.X)
+        
+        tk.Button(button_frame, text="マップを保存", 
+                 command=self.on_cell_click_callback.__self__.save_map_dialog,
+                 width=12, font=("Meiryo UI", 10), bg="#90EE90").pack(pady=5, padx=5, fill=tk.X)
+        tk.Button(button_frame, text="マップを読込", 
+                 command=self.on_cell_click_callback.__self__.load_map_dialog,
+                 width=12, font=("Meiryo UI", 10), bg="#87CEEB").pack(pady=5, padx=5, fill=tk.X)
         # --- X軸ラベル (上部) ---
         for c in range(0, MAP_COLS, 5):
             x_val = c * CELL_SIZE_X
@@ -147,6 +156,19 @@ class MapEditorView(tk.Frame):
             b_val = 0
         return f"#{r_val:02x}{g_val:02x}{b_val:02x}"
 
+    def refresh_grid(self, map_data):
+        """マップデータに基づいてグリッド表示を全て更新する"""
+        for r in range(MAP_ROWS):
+            for c in range(MAP_COLS):
+                cell_id = map_data[r][c]
+                # セルIDから対応する色を取得
+                color = None
+                for name, (cid, col) in CELL_TYPES.items():
+                    if cid == cell_id:
+                        color = col
+                        break
+                if color:
+                    self.update_cell_color(r, c, color)
     def visualize_path(self, path, map_data):
         """指定された経路をマップ上に描画する"""
         for r, c in path:
