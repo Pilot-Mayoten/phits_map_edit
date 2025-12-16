@@ -49,7 +49,7 @@ class SimulationControlsView(tk.Frame):
         frame = ttk.LabelFrame(parent, text="経路の管理", padding=10)
         
         # --- 経路リスト ---
-        cols = ("#", "色", "ステップ幅(cm)")
+        cols = ("#", "色", "ステップ幅(cm)", "総線量(Gy/source)")
         self.tree = ttk.Treeview(frame, columns=cols, show="headings", height=5) # 表示行数を5行に制限
         for col in cols:
             self.tree.heading(col, text=col)
@@ -57,6 +57,7 @@ class SimulationControlsView(tk.Frame):
         self.tree.column("#", width=40, anchor=tk.CENTER)
         self.tree.column("色", width=100, anchor=tk.CENTER)
         self.tree.column("ステップ幅(cm)", width=130, anchor=tk.E)
+        self.tree.column("総線量(Gy/source)", width=150, anchor=tk.E)
 
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
@@ -135,11 +136,17 @@ class SimulationControlsView(tk.Frame):
         for i, r in enumerate(routes):
             step_info = f"{len(r['detailed_path'])} pts" if 'detailed_path' in r else r.get('step_width', 'N/A')
             color = r.get('color', 'black')
+            total_dose = r.get('total_dose', None)
+            if total_dose is not None:
+                dose_str = f"{total_dose:.4e}"
+            else:
+                dose_str = "-"
 
             values = (
                 i + 1,
                 color,
                 step_info,
+                dose_str,
             )
             # 色のタグを設定
             tag_name = f"color_{color}"
