@@ -16,13 +16,13 @@ class SimulationControlsView(tk.Frame):
         # スタイル設定
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure("TButton", padding=10, font=("Meiryo UI", 11))
-        style.configure("TLabel", padding=5, font=("Meiryo UI", 11))
-        style.configure("TEntry", padding=7, font=("Meiryo UI", 11))
-        style.configure("TLabelframe", padding=11)
-        style.configure("TLabelframe.Label", font=("Meiryo UI", 12, "bold"))
-        style.configure("Treeview", font=("Meiryo UI", 10), rowheight=32)
-        style.configure("Treeview.Heading", font=("Meiryo UI", 11, "bold"))
+        style.configure("TButton", padding=8, font=("Meiryo UI", 10))
+        style.configure("TLabel", padding=4, font=("Meiryo UI", 10))
+        style.configure("TEntry", padding=6, font=("Meiryo UI", 10))
+        style.configure("TLabelframe", padding=10)
+        style.configure("TLabelframe.Label", font=("Meiryo UI", 11, "bold"))
+        style.configure("Treeview", font=("Meiryo UI", 10), rowheight=25)
+        style.configure("Treeview.Heading", font=("Meiryo UI", 10, "bold"))
         
         self.create_widgets()
 
@@ -54,11 +54,11 @@ class SimulationControlsView(tk.Frame):
         for col in cols:
             self.tree.heading(col, text=col)
 
-        self.tree.column("#", width=50, anchor=tk.CENTER)
-        self.tree.column("色", width=110, anchor=tk.CENTER)
-        self.tree.column("係数ω", width=120, anchor=tk.E)
-        self.tree.column("ステップ幅(cm)", width=140, anchor=tk.E)
-        self.tree.column("総線量(Gy/source)", width=160, anchor=tk.E)
+        self.tree.column("#", width=40, anchor=tk.CENTER)
+        self.tree.column("色", width=100, anchor=tk.CENTER)
+        self.tree.column("係数ω", width=100, anchor=tk.E)
+        self.tree.column("ステップ幅(cm)", width=130, anchor=tk.E)
+        self.tree.column("総線量(Gy/source)", width=150, anchor=tk.E)
 
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
@@ -78,6 +78,15 @@ class SimulationControlsView(tk.Frame):
         ttk.Button(button_frame, text="経路を追加", command=self.callbacks["add_route"]).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="選択を削除", command=self.callbacks["delete_route"]).pack(side=tk.LEFT, padx=5)
 
+        # --- 結果アクセスボタン ---
+        result_button_frame = ttk.Frame(frame)
+        result_button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0), sticky="ew")
+        
+        ttk.Button(result_button_frame, text="線量プロファイルを表示", 
+                  command=self.callbacks.get("show_dose_profile", lambda: None)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(result_button_frame, text="結果をExcelで開く", 
+                  command=self.callbacks.get("open_csv", lambda: None)).pack(side=tk.LEFT, padx=5)
+
         return frame
 
     def _create_simulation_actions_panel(self, parent):
@@ -91,13 +100,13 @@ class SimulationControlsView(tk.Frame):
         run_button_frame = ttk.Frame(run_frame)
         run_button_frame.pack(fill=tk.X, padx=5, pady=4)
         
-        ttk.Button(run_button_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"], width=32).pack(fill=tk.X, pady=3)
-        ttk.Button(run_button_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None), width=32).pack(fill=tk.X, pady=3)
-        ttk.Button(run_button_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"], width=32).pack(fill=tk.X, pady=3)
+        ttk.Button(run_button_frame, text="1. 環境入力を生成", command=self.callbacks["generate_env_map"], width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(run_button_frame, text="2. 線量マップ読込", command=self.callbacks.get("load_dose_map", lambda: None), width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(run_button_frame, text="3. 最適経路を探索", command=self.callbacks["find_optimal_route"], width=28).pack(fill=tk.X, pady=2)
         ttk.Button(run_button_frame, text="4. 経路上の詳細線量評価", 
-                   command=self.callbacks["run_detailed_simulation"], width=32).pack(fill=tk.X, pady=3)
+                   command=self.callbacks["run_detailed_simulation"], width=28).pack(fill=tk.X, pady=2)
         ttk.Button(run_button_frame, text="5. PHITS実行と結果プロット", 
-                   command=self.callbacks["run_phits_and_plot"], width=32).pack(fill=tk.X, pady=3)
+                   command=self.callbacks["run_phits_and_plot"], width=28).pack(fill=tk.X, pady=2)
         
         # --- デバッグ用フレーム ---
         debug_frame = ttk.LabelFrame(frame, text="その他の機能")
@@ -107,26 +116,17 @@ class SimulationControlsView(tk.Frame):
         debug_button_frame = ttk.Frame(debug_frame)
         debug_button_frame.pack(fill=tk.X, padx=5, pady=4)
         
-        ttk.Button(debug_button_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=32).pack(fill=tk.X, pady=3)
+        ttk.Button(debug_button_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=28).pack(fill=tk.X, pady=2)
         
         # --- 結果保存フレーム ---
-        save_frame = ttk.LabelFrame(frame, text="結果の保存と表示")
+        save_frame = ttk.LabelFrame(frame, text="結果の保存")
         save_frame.pack(fill=tk.X, padx=5, pady=(10, 5), anchor=tk.E)
         
         save_button_frame = ttk.Frame(save_frame)
-        save_button_frame.pack(fill=tk.X, padx=5, pady=3)
+        save_button_frame.pack(fill=tk.X, padx=5, pady=4)
 
-        self.save_csv_button = ttk.Button(save_button_frame, text="結果をCSV形式で保存", command=self.callbacks["save_results_csv"], width=32, state="disabled")
+        self.save_csv_button = ttk.Button(save_button_frame, text="結果をCSV形式で保存", command=self.callbacks["save_results_csv"], width=28, state="disabled")
         self.save_csv_button.pack(fill=tk.X, pady=2)
-
-        # 結果アクセスボタン
-        result_button_frame = ttk.Frame(save_frame)
-        result_button_frame.pack(fill=tk.X, padx=5, pady=3)
-        
-        ttk.Button(result_button_frame, text="線量プロファイルを表示", 
-                  command=self.callbacks.get("show_dose_profile", lambda: None), width=32).pack(fill=tk.X, pady=2)
-        ttk.Button(result_button_frame, text="結果をExcelで開く", 
-                  command=self.callbacks.get("open_csv", lambda: None), width=32).pack(fill=tk.X, pady=2)
 
         return frame
 
