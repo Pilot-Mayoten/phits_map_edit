@@ -14,6 +14,7 @@ from tkinter import scrolledtext
 
 # --- アプリケーションのコアモジュール ---
 from app_config import MAP_ROWS, MAP_COLS, CELL_TYPES
+from config_loader import ConfigManager
 from map_editor_view import MapEditorView
 from simulation_controls_view import SimulationControlsView
 from phits_handler import (generate_environment_input_file, 
@@ -38,8 +39,19 @@ class MainApplication(tk.Tk):
             messagebox.showwarning("多重起動警告", "MainApplicationのインスタンスが複数作成されました。予期せぬ動作の原因となります。")
 
         super().__init__()
-        self.title("🗺️ PHITS Map Editor & Route Planner")
-        self.geometry("1600x1080") # Windowの高さを拡大
+        
+        # config.iniから設定を読み込む
+        self.config_manager = ConfigManager()
+        
+        # ウィンドウタイトルとサイズをconfig.iniから取得
+        app_title = self.config_manager.get_app_title()
+        window_width = self.config_manager.get_window_width()
+        window_height = self.config_manager.get_window_height()
+        grid_width = self.config_manager.get_grid_width()
+        control_panel_width = self.config_manager.get_control_panel_width()
+        
+        self.title(app_title)
+        self.geometry(f"{window_width}x{window_height}")
 
         # --- 1. 内部データの初期化 ---
         self.map_data = [[CELL_TYPES["床 (通行可)"][0] for _ in range(MAP_COLS)] 
@@ -66,7 +78,7 @@ class MainApplication(tk.Tk):
                                              self.on_cell_click,
                                              self.on_cell_hover)
         self.map_editor_view.main_app = self  # ★save/load機能用
-        main_paned.add(self.map_editor_view, width=1050)
+        main_paned.add(self.map_editor_view, width=grid_width)
         main_paned.paneconfigure(self.map_editor_view, minsize=900)
         
         callbacks = {
@@ -83,7 +95,7 @@ class MainApplication(tk.Tk):
             "open_csv": self.open_csv_file,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
-        main_paned.add(self.sim_controls_view, width=300)
+        main_paned.add(self.sim_controls_view, width=control_panel_width)
         main_paned.paneconfigure(self.sim_controls_view, minsize=250)
 
         # 下半分（ログ表示エリア）
@@ -117,11 +129,12 @@ class MainApplication(tk.Tk):
                     self.latest_results = result # ★結果をインスタンス変数に保持
                     self.sim_controls_view.save_csv_button.config(state="normal") # ★ボタンを有効化
                     
-                    # --- 経路データに total_dose を格納してツリーを更新 ---
+                    # --- 経路データに total_dose と結果を格納してツリーを更新 ---
                     for i, route in enumerate(self.routes):
                         route_name = f"route_{i + 1}"
                         if route_name in result:
                             route["total_dose"] = result[route_name].get("total_dose", None)
+                            route["results"] = result[route_name]  # ★各経路に結果を保存
                     self.sim_controls_view.update_route_tree(self.routes)
                     
                     # --- 合計線量のサマリを作成 ---
@@ -493,14 +506,31 @@ class MainApplication(tk.Tk):
         messagebox.showinfo("読み込み成功", f"マップを読み込みました。\n{filepath}")
 
     def show_dose_profile(self):
-        """最新の線量プロファイルグラフを表示する"""
-        if not self.latest_results:
-            messagebox.showinfo("情報", "表示可能な線量プロファイルデータがありません。\n先に「5. PHITS実行と結果プロット」を実行してください。")
-            self.log("線量プロファイル表示：結果データがありません。")
+        """選択された経路の線量プロファイルグラフを表示する"""
+        # 選択された経路のインデックスを取得
+        selected_indices = self.sim_controls_view.get_selected_route_indices()
+        if not selected_indices:
+            messagebox.showinfo("情報", "プロファイルを表示する経路を選択してください。")
+            self.log("線量プロファイル表示：経路が選択されていません。")
             return
         
-        self.log("線量プロファイルを表示中...")
-        visualizer.plot_dose_profile(self.latest_results, self.routes)
+        if len(selected_indices) > 1:
+            messagebox.showinfo("情報", "表示する経路は1つだけ選択してください。")
+            return
+        
+        route_index = selected_indices[0]
+        route = self.routes[route_index]
+        route_name = f"route_{route_index + 1}"
+        
+        # 選択経路に保存されている結果を取得
+        if "results" not in route:
+            messagebox.showinfo("情報", f"{route_name}の結果データがありません。\n先に「5. PHITS実行と結果プロット」を実行してください。")
+            self.log(f"線量プロファイル表示：{route_name}の結果がありません。")
+            return
+        
+        selected_result = {route_name: route["results"]}
+        self.log(f"線量プロファイルを表示中 ({route_name})...")
+        visualizer.plot_dose_profile(selected_result, [route])
 
     def open_csv_file(self):
         """最新の結果CSVファイルをExcelで開く"""

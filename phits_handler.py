@@ -40,7 +40,16 @@ def generate_environment_input_file(map_data, nuclide=None, activity=None):
         "\n",
         "[ M a t e r i a l ]",
         "  mat[1]   N 8 O 2         $ Air",
-        "  mat[2]   Fe 1.0          $ Iron",
+        "  mat[2]   H -0.023          $ Concrete",
+        "           C -0.0023 ",
+        "           O -1.22 ",
+        "           Na -0.0368",
+        "           Mg -0.005",
+        "           Al -0.078",
+        "           Si -0.775",
+        "           K -0.0299",
+        "           Ca -0.1",
+        "           Fe -0.032",
         "\n"
     ]
 
@@ -62,7 +71,7 @@ def generate_environment_input_file(map_data, nuclide=None, activity=None):
                     f"  {s_num}  rpp  {x_min:.1f} {x_max:.1f}  {y_min:.1f} {y_max:.1f}  {z_min:.1f} {z_max:.1f}"
                 )
                 cell_lines.append(
-                    f"  {s_num}    2  -7.874   -{s_num}    $ Wall at GUI(r={r}, c={c})"
+                    f"  {s_num}    2  -2.302   -{s_num}    $ Wall at GUI(r={r}, c={c})"
                 )
                 wall_surface_numbers.append(s_num)
                 surface_id_counter += 1
