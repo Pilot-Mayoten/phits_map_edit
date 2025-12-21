@@ -287,3 +287,74 @@ def plot_dose_profile(results, routes):
         # プロットするデータがなかった場合、不要なウィンドウを閉じる
         plt.close(fig)
 
+
+def visualize_astar_evaluation(eval_data, path, map_data, eval_type='f'):
+    """
+    A*アルゴリズムの評価関数の値を2Dヒートマップで可視化する。
+    
+    Args:
+        eval_data (dict): 各ノードの評価値データ {(row, col): {'f': f値, 'g': g値, 'h': h値}}
+        path (list): 最終的に見つかった経路 [(row, col), ...]
+        map_data (list[list[int]]): マップデータ (壁情報)
+        eval_type (str): 表示する評価値のタイプ ('f', 'g', 'h')
+    """
+    set_japanese_font()
+    
+    from app_config import MAP_ROWS, MAP_COLS
+    import numpy as np
+    
+    # 評価値マップを作成 (訪問していないノードはNaN)
+    eval_map = np.full((MAP_ROWS, MAP_COLS), np.nan)
+    
+    for (r, c), values in eval_data.items():
+        if eval_type in values:
+            eval_map[r, c] = values[eval_type]
+    
+    # 壁の位置にもNaNを設定
+    for r in range(MAP_ROWS):
+        for c in range(MAP_COLS):
+            if map_data[r][c] == 1:
+                eval_map[r, c] = np.nan
+    
+    # 図を作成
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # ヒートマップを描画
+    im = ax.imshow(eval_map, cmap='viridis', origin='upper', interpolation='nearest')
+    
+    # カラーバーを追加
+    cbar = plt.colorbar(im, ax=ax)
+    
+    # タイトルとラベルを設定
+    titles = {
+        'f': 'f(n) = g(n) + h(n) の値 (評価関数)',
+        'g': 'g(n) の値 (スタートからの実コスト)',
+        'h': 'h(n) の値 (ゴールまでのヒューリスティック)'
+    }
+    cbar.set_label(titles.get(eval_type, eval_type), fontproperties=_font_prop, fontsize=14)
+    ax.set_title(f'A* アルゴリズムの評価値マップ: {titles.get(eval_type, eval_type)}', 
+                 fontproperties=_font_prop, fontsize=16)
+    ax.set_xlabel('列 (Col)', fontproperties=_font_prop, fontsize=12)
+    ax.set_ylabel('行 (Row)', fontproperties=_font_prop, fontsize=12)
+    
+    # 経路を重ねて描画
+    if path:
+        path_rows = [p[0] for p in path]
+        path_cols = [p[1] for p in path]
+        ax.plot(path_cols, path_rows, 'r-', linewidth=3, label='最適経路', alpha=0.8)
+        ax.plot(path_cols[0], path_rows[0], 'go', markersize=15, label='スタート', markeredgecolor='black', markeredgewidth=2)
+        ax.plot(path_cols[-1], path_rows[-1], 'r*', markersize=20, label='ゴール', markeredgecolor='black', markeredgewidth=2)
+    
+    # 凡例を追加
+    legend = ax.legend(fontsize=12, loc='upper right')
+    for text in legend.get_texts():
+        text.set_font_properties(_font_prop)
+    
+    # グリッドを追加
+    ax.set_xticks(range(0, MAP_COLS, max(1, MAP_COLS // 20)))
+    ax.set_yticks(range(0, MAP_ROWS, max(1, MAP_ROWS // 20)))
+    ax.grid(True, which='both', alpha=0.2, linestyle='--', linewidth=0.5)
+    
+    plt.tight_layout()
+    plt.show()
+

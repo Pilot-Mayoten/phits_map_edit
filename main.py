@@ -89,6 +89,7 @@ class MainApplication(tk.Tk):
             "add_route": self.add_route,
             "delete_route": self.delete_route,
             "visualize_routes": self.visualize_routes,
+            "visualize_astar_eval": self.visualize_astar_evaluation,
             "run_phits_and_plot": self.run_phits_and_plot_threaded,
             "save_results_csv": self.save_results_csv,
             "show_dose_profile": self.show_dose_profile,
@@ -418,6 +419,73 @@ class MainApplication(tk.Tk):
         sources = self.find_source_points()
         visualizer.visualize_routes_2d(self.routes, sources, self.map_data)
         self.log("2D可視化ウィンドウを表示しました。")
+
+    def visualize_astar_evaluation(self):
+        """A*アルゴリズムの評価関数の値を可視化する"""
+        self.log("A*評価関数の可視化を開始します...")
+        
+        # 経路が選択されているか確認
+        selected_indices = self.sim_controls_view.get_selected_route_indices()
+        if not selected_indices:
+            messagebox.showinfo("情報", "経路を選択してください。")
+            return
+        if len(selected_indices) > 1:
+            messagebox.showwarning("警告", "経路は1つだけ選択してください。")
+            return
+        
+        route_index = selected_indices[0]
+        target_route = self.routes[route_index]
+        
+        # スタート、ゴール、中継点を取得
+        start_grid = target_route.get("start")
+        goal_grid = target_route.get("goal")
+        middle_grid = target_route.get("middle")
+        weight = target_route.get("weight", 0.0)
+        
+        if not start_grid or not goal_grid:
+            messagebox.showerror("エラー", "スタートまたはゴールが設定されていません。")
+            return
+        
+        if not self.dose_map:
+            messagebox.showinfo("情報", "線量マップが読み込まれていません。線量なしで可視化します。")
+            self.dose_map = [[0.0 for _ in range(MAP_COLS)] for _ in range(MAP_ROWS)]
+        
+        # 評価値を記録しながらA*を実行
+        from route_calculator import run_astar
+        
+        # 中継点がある場合は、スタート→中継点→ゴールの2段階で実行
+        if middle_grid:
+            # 第1区間: スタート → 中継点
+            result1 = run_astar(start_grid, middle_grid, self.map_data, self.dose_map, weight, record_values=True)
+            if result1[0]:  # 経路が見つかった場合
+                path1, eval_data1 = result1
+                # f(n), g(n), h(n) の3つのグラフを表示
+                visualizer.visualize_astar_evaluation(eval_data1, path1, self.map_data, eval_type='f')
+                visualizer.visualize_astar_evaluation(eval_data1, path1, self.map_data, eval_type='g')
+                visualizer.visualize_astar_evaluation(eval_data1, path1, self.map_data, eval_type='h')
+                self.log(f"第1区間(スタート→中継点)の評価関数を可視化しました。")
+            
+            # 第2区間: 中継点 → ゴール
+            result2 = run_astar(middle_grid, goal_grid, self.map_data, self.dose_map, weight, record_values=True)
+            if result2[0]:
+                path2, eval_data2 = result2
+                visualizer.visualize_astar_evaluation(eval_data2, path2, self.map_data, eval_type='f')
+                visualizer.visualize_astar_evaluation(eval_data2, path2, self.map_data, eval_type='g')
+                visualizer.visualize_astar_evaluation(eval_data2, path2, self.map_data, eval_type='h')
+                self.log(f"第2区間(中継点→ゴール)の評価関数を可視化しました。")
+        else:
+            # 中継点なし: スタート → ゴール
+            result = run_astar(start_grid, goal_grid, self.map_data, self.dose_map, weight, record_values=True)
+            if result[0]:  # 経路が見つかった場合
+                path, eval_data = result
+                # f(n), g(n), h(n) の3つのグラフを表示
+                visualizer.visualize_astar_evaluation(eval_data, path, self.map_data, eval_type='f')
+                visualizer.visualize_astar_evaluation(eval_data, path, self.map_data, eval_type='g')
+                visualizer.visualize_astar_evaluation(eval_data, path, self.map_data, eval_type='h')
+                self.log("A*評価関数 f(n), g(n), h(n) の可視化を完了しました。")
+            else:
+                messagebox.showerror("エラー", "経路が見つかりませんでした。")
+                self.log("経路探索に失敗しました。")
 
     def save_results_csv(self):
         """シミュレーション結果をCSVファイルに保存する。"""

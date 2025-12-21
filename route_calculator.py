@@ -49,12 +49,16 @@ def find_optimal_route(start_pos, goal_pos, middle_pos, map_data, dose_map, weig
 
     return full_path
 
-def run_astar(start, goal, map_data, dose_map, weight):
+def run_astar(start, goal, map_data, dose_map, weight, record_values=False):
     """
     A*アルゴリズムを実行して、2点間の最適経路を見つける。
 
+    Args:
+        record_values: Trueの場合、各ノードの評価値を記録して返す
+
     Returns:
         list or None: 経路のリスト。見つからなければNone。
+        record_values=Trueの場合は (path, eval_data) のタプルを返す
     """
     rows, cols = MAP_ROWS, MAP_COLS
     
@@ -64,10 +68,19 @@ def run_astar(start, goal, map_data, dose_map, weight):
     visited = set()
     min_costs = {start: 0}
     
+    # 評価値を記録する辞書 (record_values=Trueのとき使用)
+    # キー: (row, col), 値: {'f': f(n), 'g': g(n), 'h': h(n)}
+    eval_data = {} if record_values else None
+    
+    if record_values:
+        eval_data[start] = {'f': 0, 'g': 0, 'h': abs(goal[0] - start[0]) + abs(goal[1] - start[1])}
+    
     while queue:
-        _, cost, current, path = heapq.heappop(queue)
+        priority, cost, current, path = heapq.heappop(queue)
         
         if current == goal:
+            if record_values:
+                return path, eval_data
             return path
         
         if current in visited:
@@ -101,6 +114,16 @@ def run_astar(start, goal, map_data, dose_map, weight):
                 priority = new_cost + heuristic
                 heapq.heappush(queue, (priority, new_cost, next_pos, path + [next_pos]))
                 
+                # 評価値を記録
+                if record_values:
+                    eval_data[next_pos] = {
+                        'f': priority,
+                        'g': new_cost,
+                        'h': heuristic
+                    }
+                
+    if record_values:
+        return None, eval_data
     return None # ゴールに到達できなかった場合
 
 # ==========================================================================

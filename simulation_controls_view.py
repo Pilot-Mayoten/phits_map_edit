@@ -117,6 +117,7 @@ class SimulationControlsView(tk.Frame):
         debug_button_frame.pack(fill=tk.X, padx=5, pady=4)
         
         ttk.Button(debug_button_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=28).pack(fill=tk.X, pady=2)
+        ttk.Button(debug_button_frame, text="A*評価関数を可視化", command=self.callbacks["visualize_astar_eval"], width=28).pack(fill=tk.X, pady=2)
         
         # --- 結果保存フレーム ---
         save_frame = ttk.LabelFrame(frame, text="結果の保存")

@@ -2,6 +2,10 @@
 ed25519
 ed25519.pub
 
+# Presentation Generator (separate project)
+create_presentation.py
+*.pptx
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
