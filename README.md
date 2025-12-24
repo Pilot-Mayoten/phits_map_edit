@@ -41,23 +41,40 @@ phits_map_edit/
 ## 必要なもの
 
 -   Windows OS
--   Python 3.8 以上
--   PHITS（別途インストールと、`phits.bat`への環境変数PATH設定が必要）
+-   Python 3.10 以上（動作確認: 3.13）
+-   PHITS（別途インストールし、`phits.bat`をPATHに通す）
 -   Pythonライブラリ:
-    -   `tkinter` (Python標準ライブラリ)
+    -   `tkinter` (標準ライブラリ)
     -   `matplotlib`
+    -   `numpy`
 
-`matplotlib`は以下のコマンドでインストールできます。
+### セットアップ（初回のみ）
+
+PowerShellでプロジェクト直下に仮想環境を作成し、必要なライブラリを入れます。
 
 ```powershell
-pip install matplotlib
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install matplotlib numpy
 ```
+
+### 起動方法
+
+-   PowerShell: `./run.ps1`
+-   コマンドプロンプト: `run.bat`
+
+これらのスクリプトは Tcl/Tk のパス（`TCL_LIBRARY` / `TK_LIBRARY`）を自動で設定し、仮想環境の Python で `main.py` を実行します。
+
+### トラブルシュート
+
+-   `Can't find a usable init.tcl` が出る場合は、必ず上記の `run.ps1` または `run.bat` で起動してください（Tcl/Tk のパスを自動設定します）。
 
 ## ワークフロー（使い方）
 
 ### ステップ1: マップの作成と環境シミュレーション
 
-1.  アプリケーションを起動します (`python main.py`)。
+1.  アプリケーションを起動します (`./run.ps1` または `run.bat`)。
 2.  左側の**マップエディタ**を使い、壁、線源、スタート、ゴールなどを配置します。
     -   **マップの保存:** 「マップを保存」ボタンでJSON形式で保存可能。同じマップで複数実験を効率的に実施できます。
     -   **マップの読み込み:** 「マップを読込」ボタンで以前保存したマップを復元できます。
