@@ -4,10 +4,35 @@ PHITS Map Editor and Simulation Runner
 This application serves as the main entry point and controller for the GUI.
 """
 
+import os
+import sys
+import glob
+
+
+def _ensure_tcl_tk_paths():
+    """venv 経由で起動すると Tcl/Tk のライブラリ（init.tcl 等）が
+    見つからず tkinter が起動できないことがある。ベース Python 側の
+    tcl フォルダを環境変数で明示して回避する。"""
+    if os.environ.get("TCL_LIBRARY") and os.environ.get("TK_LIBRARY"):
+        return
+    # venv では sys.base_prefix にベース Python の場所が入る
+    for base in {sys.base_prefix, sys.prefix}:
+        tcl_root = os.path.join(base, "tcl")
+        if not os.path.isdir(tcl_root):
+            continue
+        tcl_dirs = glob.glob(os.path.join(tcl_root, "tcl8.*"))
+        tk_dirs = glob.glob(os.path.join(tcl_root, "tk8.*"))
+        if tcl_dirs and tk_dirs:
+            os.environ.setdefault("TCL_LIBRARY", tcl_dirs[0])
+            os.environ.setdefault("TK_LIBRARY", tk_dirs[0])
+            return
+
+
+_ensure_tcl_tk_paths()
+
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.simpledialog as simpledialog
-import os
 import threading
 from queue import Queue, Empty
 from tkinter import scrolledtext
@@ -22,7 +47,7 @@ from phits_handler import (generate_environment_input_file,
                            generate_detailed_simulation_files,
                            execute_phits_simulation,
                            extract_dose_from_deposit)
-from route_calculator import find_optimal_route, compute_detailed_path_points, resample_path_by_width
+from route_calculator import find_optimal_route, resample_path_by_width
 from utils import get_physical_coords
 import visualizer
 from results_exporter import generate_results_csv
@@ -50,11 +75,12 @@ class MainApplication(tk.Tk):
         grid_width = self.config_manager.get_grid_width()
         control_panel_width = self.config_manager.get_control_panel_width()
         
+        self._app_title = app_title
         self.title(app_title)
         self.geometry(f"{window_width}x{window_height}")
 
         # --- 1. 内部データの初期化 ---
-        self.map_data = [[CELL_TYPES["床 (通行可)"][0] for _ in range(MAP_COLS)] 
+        self.map_data = [[CELL_TYPES["床 (通行可)"][0] for _ in range(MAP_COLS)]
                          for _ in range(MAP_ROWS)]
         self.dose_map = None
         self.routes = [] # 複数の経路情報を管理するリスト
@@ -62,6 +88,11 @@ class MainApplication(tk.Tk):
         self.log_queue = Queue()
         self.result_queue = Queue() # ★結果受け渡し用のキューを追加
         self.latest_results = None # ★最新の結果を保持する変数
+
+        # --- 保存状態の管理 ---
+        self.map_filepath = None      # 現在編集中のマップファイルのパス
+        self.map_dirty = False        # 前回の保存/読込からマップが変更されたか
+        self.results_state = "none"   # 結果の状態: none / unsaved / saved
 
         # --- 2. メインレイアウトの作成 ---
         # 全体を上下に分割するPanedWindow
@@ -79,7 +110,7 @@ class MainApplication(tk.Tk):
                                              self.on_cell_hover)
         self.map_editor_view.main_app = self  # ★save/load機能用
         main_paned.add(self.map_editor_view, width=grid_width)
-        main_paned.paneconfigure(self.map_editor_view, minsize=900)
+        main_paned.paneconfigure(self.map_editor_view, minsize=320)
         
         callbacks = {
             "generate_env_map": self.generate_env_map,
@@ -94,6 +125,8 @@ class MainApplication(tk.Tk):
             "save_results_csv": self.save_results_csv,
             "show_dose_profile": self.show_dose_profile,
             "open_csv": self.open_csv_file,
+            "save_map": self.save_map_dialog,
+            "load_map": self.load_map_dialog,
         }
         self.sim_controls_view = SimulationControlsView(main_paned, callbacks)
         main_paned.add(self.sim_controls_view, width=control_panel_width)
@@ -111,8 +144,43 @@ class MainApplication(tk.Tk):
         status_bar = tk.Label(self, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
+        # 保存状態の初期表示
+        self._refresh_save_status()
+
         self.after(100, self.process_log_queue)
         self.after(200, self.process_result_queue) # ★結果処理ループを開始
+
+    # ==========================================================================
+    #  保存状態の表示
+    # ==========================================================================
+    def _refresh_save_status(self):
+        """ウィンドウタイトルと右パネルに、マップ・結果の保存状態を反映する。"""
+        if self.map_filepath is None:
+            # まだ一度も保存/読込していない新規マップ
+            map_state = "new"
+            map_name = "(無題)"
+            map_label = "マップ: 新規（未保存）"
+        elif self.map_dirty:
+            map_state = "dirty"
+            map_name = os.path.basename(self.map_filepath)
+            map_label = f"マップ: {map_name}（未保存）"
+        else:
+            map_state = "saved"
+            map_name = os.path.basename(self.map_filepath)
+            map_label = f"マップ: {map_name}（保存済）"
+
+        mark = " *" if (self.map_dirty or self.map_filepath is None) else ""
+        self.title(f"{self._app_title} — {map_name}{mark}")
+
+        if self.results_state == "none":
+            results_label = "結果: なし"
+        elif self.results_state == "unsaved":
+            results_label = "結果: 未保存"
+        else:
+            results_label = "結果: 保存済"
+
+        self.sim_controls_view.set_save_status(map_label, map_state,
+                                               results_label, self.results_state)
 
     def process_result_queue(self):
         """結果キューを処理して、メインスレッドでGUI操作（プロットやダイアログ）を実行"""
@@ -128,6 +196,8 @@ class MainApplication(tk.Tk):
                 else:
                     self.log("全経路の処理が完了しました。結果をプロットします。")
                     self.latest_results = result # ★結果をインスタンス変数に保持
+                    self.results_state = "unsaved"
+                    self._refresh_save_status()
                     self.sim_controls_view.save_csv_button.config(state="normal") # ★ボタンを有効化
                     
                     # --- 経路データに total_dose と結果を格納してツリーを更新 ---
@@ -140,7 +210,6 @@ class MainApplication(tk.Tk):
                     
                     # --- 合計線量のサマリを作成 ---
                     summary_lines = ["\n--- 合計線量 結果サマリ ---"]
-                    total_dose_summary = ""
                     # 合計線量が小さい順にソートして表示
                     sorted_results = sorted(result.items(), key=lambda item: item[1].get('total_dose', float('inf')))
                     
@@ -207,6 +276,8 @@ class MainApplication(tk.Tk):
         self.map_data[r][c] = new_id
         self.map_editor_view.update_cell_color(r, c, new_color)
         self.log(f"セル [{r},{c}] を「{tool_name}」に変更しました。")
+        self.map_dirty = True
+        self._refresh_save_status()
 
     def on_cell_hover(self, r, c):
         x_min, x_max, y_min, y_max, _, _ = get_physical_coords(r, c)
@@ -514,7 +585,9 @@ class MainApplication(tk.Tk):
             # ファイルに書き込み
             with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
                 f.write(csv_data)
-            
+
+            self.results_state = "saved"
+            self._refresh_save_status()
             self.log(f"結果をCSVファイルに正常に保存しました: {filepath}")
             messagebox.showinfo("保存成功", f"結果をCSVファイルに保存しました。\n{filepath}")
 
@@ -537,6 +610,9 @@ class MainApplication(tk.Tk):
 
         from utils import save_map_to_json
         if save_map_to_json(self.map_data, filepath):
+            self.map_filepath = filepath
+            self.map_dirty = False
+            self._refresh_save_status()
             self.log(f"マップを保存しました: {filepath}")
             messagebox.showinfo("保存成功", f"マップを保存しました。\n{filepath}")
         else:
@@ -569,7 +645,11 @@ class MainApplication(tk.Tk):
         # GUI表示を更新
         self.map_editor_view.refresh_grid(self.map_data)
         self.sim_controls_view.update_route_tree(self.routes)
-        
+
+        self.map_filepath = filepath
+        self.map_dirty = False
+        self._refresh_save_status()
+
         self.log(f"マップを読み込みました: {filepath}")
         messagebox.showinfo("読み込み成功", f"マップを読み込みました。\n{filepath}")
 

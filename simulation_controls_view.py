@@ -27,23 +27,94 @@ class SimulationControlsView(tk.Frame):
         self.create_widgets()
 
     def create_widgets(self):
-        # --- 全体を上下左右に分割するPanedWindow ---
-        main_paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
-        main_paned.pack(fill=tk.BOTH, expand=True)
+        # --- パネル全体を縦スクロール可能にする ---
+        # ウィンドウが低いと下のボタンが見切れるため、Canvas + Scrollbar で
+        # スクロールできるようにし、内部フレームにコンテンツを積む。
+        canvas = tk.Canvas(self, highlightthickness=0)
+        vsb = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
 
-        # --- 上部：経路定義とリスト ---
-        top_frame = ttk.Frame(main_paned)
-        main_paned.add(top_frame, weight=1) # 上部の比率を小さくする
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        top_paned = ttk.PanedWindow(top_frame, orient=tk.HORIZONTAL)
-        top_paned.pack(fill=tk.BOTH, expand=True)
-        
-        route_management_frame = self._create_route_management_panel(top_paned)
-        top_paned.add(route_management_frame, weight=1)
+        content = ttk.Frame(canvas)
+        content_id = canvas.create_window((0, 0), window=content, anchor="nw")
 
-        # --- 中-間部：シミュレーション実行 ---
-        action_frame = self._create_simulation_actions_panel(main_paned)
-        main_paned.add(action_frame, weight=4) # 下部の比率を大きくする
+        # 内部フレームのサイズ変更に合わせてスクロール領域を更新
+        def _on_content_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        content.bind("<Configure>", _on_content_configure)
+
+        # Canvas の幅に内部フレームを合わせる（横方向はいっぱいに広げる）
+        def _on_canvas_configure(event):
+            canvas.itemconfigure(content_id, width=event.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # マウスホイールでスクロール（パネル上にポインタがあるときのみ）
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+        def _bind_wheel(_):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        def _unbind_wheel(_):
+            canvas.unbind_all("<MouseWheel>")
+        canvas.bind("<Enter>", _bind_wheel)
+        canvas.bind("<Leave>", _unbind_wheel)
+
+        # --- ファイルと保存状態（保存系ボタンを一箇所に集約）---
+        file_frame = self._create_file_panel(content)
+        file_frame.pack(fill=tk.X, expand=False, padx=2, pady=(2, 6))
+
+        # --- 経路の管理 ---
+        route_management_frame = self._create_route_management_panel(content)
+        route_management_frame.pack(fill=tk.X, expand=False, padx=2, pady=(0, 6))
+
+        # --- シミュレーション実行 ---
+        action_frame = self._create_simulation_actions_panel(content)
+        action_frame.pack(fill=tk.X, expand=False, padx=2, pady=2)
+
+    def _create_file_panel(self, parent):
+        """マップ／結果の保存・読込ボタンと、保存状態の表示をまとめたパネル。"""
+        frame = ttk.LabelFrame(parent, text="ファイルと保存状態", padding=10)
+
+        # --- 保存状態の表示 ---
+        self.map_status_var = tk.StringVar(value="マップ: (無題)")
+        self.results_status_var = tk.StringVar(value="結果: なし")
+
+        status_frame = ttk.Frame(frame)
+        status_frame.pack(fill=tk.X, pady=(0, 8))
+        self.map_status_label = ttk.Label(status_frame, textvariable=self.map_status_var)
+        self.map_status_label.pack(anchor=tk.W)
+        self.results_status_label = ttk.Label(status_frame, textvariable=self.results_status_var)
+        self.results_status_label.pack(anchor=tk.W)
+
+        # --- マップの保存／読込 ---
+        map_row = ttk.Frame(frame)
+        map_row.pack(fill=tk.X, pady=2)
+        ttk.Button(map_row, text="マップを保存",
+                   command=self.callbacks.get("save_map", lambda: None)).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
+        ttk.Button(map_row, text="マップを読込",
+                   command=self.callbacks.get("load_map", lambda: None)).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
+
+        # --- 結果の保存／表示 ---
+        result_row = ttk.Frame(frame)
+        result_row.pack(fill=tk.X, pady=2)
+        self.save_csv_button = ttk.Button(result_row, text="結果をCSV保存",
+                                          command=self.callbacks["save_results_csv"], state="disabled")
+        self.save_csv_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
+        ttk.Button(result_row, text="結果をExcelで開く",
+                   command=self.callbacks.get("open_csv", lambda: None)).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
+
+        return frame
+
+    def set_save_status(self, map_label, map_state, results_label, results_state):
+        """保存状態の表示を更新する（main.py から呼ばれる）。"""
+        # 未保存=赤 / 保存済=緑 / 新規=グレー
+        state_color = {"dirty": "#c0392b", "saved": "#27ae60",
+                       "new": "#888888", "unsaved": "#c0392b", "none": "#888888"}
+        self.map_status_var.set(map_label)
+        self.results_status_var.set(results_label)
+        self.map_status_label.configure(foreground=state_color.get(map_state, "#888888"))
+        self.results_status_label.configure(foreground=state_color.get(results_state, "#888888"))
 
     def _create_route_management_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="経路の管理", padding=10)
@@ -81,11 +152,9 @@ class SimulationControlsView(tk.Frame):
         # --- 結果アクセスボタン ---
         result_button_frame = ttk.Frame(frame)
         result_button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0), sticky="ew")
-        
-        ttk.Button(result_button_frame, text="線量プロファイルを表示", 
-                  command=self.callbacks.get("show_dose_profile", lambda: None)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(result_button_frame, text="結果をExcelで開く", 
-                  command=self.callbacks.get("open_csv", lambda: None)).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(result_button_frame, text="選択経路の線量プロファイルを表示",
+                  command=self.callbacks.get("show_dose_profile", lambda: None)).pack(fill=tk.X, padx=5)
 
         return frame
 
@@ -118,16 +187,6 @@ class SimulationControlsView(tk.Frame):
         
         ttk.Button(debug_button_frame, text="経路を2D表示", command=self.callbacks["visualize_routes"], width=28).pack(fill=tk.X, pady=2)
         ttk.Button(debug_button_frame, text="A*評価関数を可視化", command=self.callbacks["visualize_astar_eval"], width=28).pack(fill=tk.X, pady=2)
-        
-        # --- 結果保存フレーム ---
-        save_frame = ttk.LabelFrame(frame, text="結果の保存")
-        save_frame.pack(fill=tk.X, padx=5, pady=(10, 5), anchor=tk.E)
-        
-        save_button_frame = ttk.Frame(save_frame)
-        save_button_frame.pack(fill=tk.X, padx=5, pady=4)
-
-        self.save_csv_button = ttk.Button(save_button_frame, text="結果をCSV形式で保存", command=self.callbacks["save_results_csv"], width=28, state="disabled")
-        self.save_csv_button.pack(fill=tk.X, pady=2)
 
         return frame
 
